@@ -1,9 +1,9 @@
 // MOVOKA Cloudflare Worker
-// 영화 데이터는 공식 KOBIS/KOFIC API만 사용합니다.
-// 비공식 영화관 API, 크롤링 프록시, 우회 수집은 사용하지 않습니다.
+// 영화 데이터는 KOBIS 공식 공개 데이터만 실시간으로 사용합니다.
+// 비공식 영화관 API, 크롤링 프록시, 우회 수집, KOBIS 결과의 KV 저장은 사용하지 않습니다.
 
-const KOFIC_BASE = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
-const KOBIS_WEB_BASE = 'https://www.kobis.or.kr';
+const KOBIS_REAL_TICKET_URL = 'https://www.kobis.or.kr/kobis/business/main/searchMainRealTicket.do';
+const KOBIS_BASE = 'https://www.kobis.or.kr';
 
 const GENRE_MAP = {
   '공포(호러)': '공포', '호러': '공포', '코미디': '코미디', '스릴러': '스릴러',
@@ -15,164 +15,88 @@ const GENRE_MAP = {
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...extraHeaders }
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      ...extraHeaders
+    }
   });
 }
 
-function normalizeGenres(genres = []) {
-  return [...new Set(genres.map(item => GENRE_MAP[item.genreNm] || item.genreNm).filter(Boolean))];
-}
-
-function getKoreaDateMinusOne() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  const utc = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
-  utc.setUTCDate(utc.getUTCDate() - 1);
-  return utc.toISOString().slice(0, 10).replaceAll('-', '');
-}
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+async function fetchKobis(timeoutMs = 8000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal, redirect: 'follow' });
+    // KOBIS가 직접 제공하는 공식 JSON 데이터를 실시간으로 조회합니다.
+    const response = await fetch(KOBIS_REAL_TICKET_URL, {
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: { accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error(`KOBIS_HTTP_${response.status}`);
+
+    const text = await response.text();
+    const data = JSON.parse(text);
+    if (!Array.isArray(data)) throw new Error('KOBIS_INVALID_DATA');
+    return data;
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function getKoficJson(url) {
-  const response = await fetchWithTimeout(url, {}, 8000);
-  const text = await response.text();
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`KOBIS_NON_JSON_HTTP_${response.status}`);
-  }
-  if (!response.ok) throw new Error(`KOBIS_HTTP_${response.status}`);
-  if (data?.faultResult) {
-    const fault = data.faultResult;
-    throw new Error(`KOBIS_${fault.errorCode || 'API_ERROR'}:${fault.faultInfo || 'API 오류'}`);
-  }
-  return data;
+function getKoreaDate() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}${values.month}${values.day}`;
 }
 
-// KOBIS 공식 웹 데이터에서 포스터 주소를 확인합니다.
-async function getPosterMap(targetDt) {
-  const url = new URL(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainDailyBoxOffice.do`);
-  const formatted = `${targetDt.slice(0, 4)}.${targetDt.slice(4, 6)}.${targetDt.slice(6, 8)}`;
-  url.searchParams.set('startDate', formatted);
-  url.searchParams.set('endDate', formatted);
-  const response = await fetchWithTimeout(url, {}, 8000);
-  if (!response.ok) throw new Error(`KOBIS_POSTER_PAGE_HTTP_${response.status}`);
-  const rows = await response.json();
-  const map = new Map();
-  for (const row of Array.isArray(rows) ? rows : []) {
-    if (!row?.movieCd) continue;
-    let poster = '';
-    if (row.fileSaveLoct && row.sysFileNm) {
-      poster = new URL(`${row.fileSaveLoct}${row.sysFileNm}`, KOBIS_WEB_BASE).href;
-    }
-    if (!poster && row.thumbUrl) poster = new URL(row.thumbUrl, KOBIS_WEB_BASE).href;
-    if (poster) map.set(String(row.movieCd), poster);
-  }
-  return map;
+function normalizeGenres(genre = '') {
+  return [...new Set(
+    String(genre)
+      .split(',')
+      .map(item => GENRE_MAP[item.trim()] || item.trim())
+      .filter(Boolean)
+  )];
 }
 
-// 영화 상세 정보도 KOBIS 공식 웹 데이터에서만 가져옵니다.
-async function getMovieInfoFromKobis(movieCd) {
-  const response = await fetchWithTimeout(
-    `${KOBIS_WEB_BASE}/kobis/business/main/searchMainRealTicket.do`,
-    { headers: { accept: 'application/json' } },
-    5000
-  );
-  if (!response.ok) throw new Error(`KOBIS_MOVIE_INFO_HTTP_${response.status}`);
-  const rows = await response.json();
-  const movie = (Array.isArray(rows) ? rows : []).find(row => String(row?.movieCd) === String(movieCd));
-  if (!movie) return { plot: '', director: '', trailer: '' };
+function toMovie(row, rankFallback = 999) {
+  const poster = row.thumbUrl
+    ? new URL(row.thumbUrl, KOBIS_BASE).href
+    : '';
+
   return {
-    plot: String(movie.synop || '').trim(),
-    director: String(movie.director || '').trim(),
-    trailer: ''
+    id: String(row.movieCd || ''),
+    title: String(row.movieNm || ''),
+    date: String(row.openDt || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3'),
+    genres: normalizeGenres(row.genre),
+    rating: String(row.watchGradeNm || ''),
+    runtime: Number(row.showTm) || 0,
+    rank: Number(row.rank) || rankFallback,
+    audience: Number(row.totalAudiCnt ?? row.audiCnt) || 0,
+    screens: Number(row.scrnCnt) || 0,
+    poster,
+    // 공식적으로 확인 가능한 체인별 API가 연결될 때까지 추측하지 않습니다.
+    cinemas: []
   };
 }
 
-async function collectMovies(env) {
-  const key = env.KOBIS_API_KEY;
-  if (!key) {
-    return {
-      ok: false,
-      code: 'KOBIS_API_KEY_MISSING',
-      message: 'KOBIS_API_KEY 환경변수가 설정되지 않았습니다.'
-    };
-  }
-
-  const targetDt = getKoreaDateMinusOne();
-  const boxofficeUrl = new URL(`${KOFIC_BASE}/boxoffice/searchDailyBoxOfficeList.json`);
-  boxofficeUrl.searchParams.set('key', key);
-  boxofficeUrl.searchParams.set('targetDt', targetDt);
-
-  const boxofficeData = await getKoficJson(boxofficeUrl);
-  const candidates = (boxofficeData?.boxOfficeResult?.dailyBoxOfficeList || []).slice(0, 20);
-
-  const posterPromise = getPosterMap(targetDt).catch(error => {
-    console.error('MOVOKA poster error:', error);
-    return new Map();
-  });
-
-  const detailPromises = candidates.map(async item => {
-    const detailUrl = new URL(`${KOFIC_BASE}/movie/searchMovieInfo.json`);
-    detailUrl.searchParams.set('key', key);
-    detailUrl.searchParams.set('movieCd', item.movieCd);
-
-    try {
-      const data = await getKoficJson(detailUrl);
-      const movie = data?.movieInfoResult?.movieInfo;
-      if (!movie) return null;
-
-      return {
-        id: movie.movieCd,
-        title: movie.movieNm,
-        date: movie.openDt
-          ? `${movie.openDt.slice(0, 4)}-${movie.openDt.slice(4, 6)}-${movie.openDt.slice(6, 8)}`
-          : '',
-        genres: normalizeGenres(movie.genres),
-        rating: movie.audits?.[0]?.watchGradeNm || '',
-        runtime: movie.showTm || '',
-        rank: Number(item.rank) || 999,
-        audience: Number(item.audiAcc) || 0,
-        screens: Number(item.scrnCnt) || 0,
-        poster: '',
-        // 영화관 체인별 상영 여부는 공식적으로 허용된 데이터가 확인될 때까지 추측하지 않습니다.
-        cinemas: []
-      };
-    } catch (error) {
-      console.error(`MOVOKA movie detail error (${item.movieCd}):`, error);
-      return null;
-    }
-  });
-
-  const [posterMap, detailMovies] = await Promise.all([
-    posterPromise,
-    Promise.all(detailPromises)
-  ]);
-
-  const movies = detailMovies
-    .filter(Boolean)
-    .map(movie => ({
-      ...movie,
-      poster: posterMap.get(String(movie.id)) || ''
-    }))
+async function getLiveMovies() {
+  const rows = await fetchKobis();
+  const movies = rows
+    .filter(row => row?.movieCd && row?.movieNm)
+    .slice(0, 20)
+    .map((row, index) => toMovie(row, index + 1))
     .sort((a, b) => a.rank - b.rank);
 
   return {
     ok: true,
-    source: 'KOFIC/KOBIS 공식 데이터',
-    basedAt: targetDt,
-    // 영화관 체인별 데이터는 비공식 소스를 사용하지 않기 때문에 별도 수집하지 않습니다.
+    source: '영화진흥위원회 영화관입장권통합전산망(KOBIS) 공식 데이터',
+    basedAt: getKoreaDate(),
+    live: true,
     cinemaCheckedAt: null,
     movies
   };
@@ -183,15 +107,17 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/movies') {
-      const stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
-      if (stored?.ok && Array.isArray(stored.movies)) {
-        return json(stored, 200, { 'cache-control': 'no-store' });
+      try {
+        const data = await getLiveMovies();
+        return json(data, 200, { 'cache-control': 'no-store' });
+      } catch (error) {
+        console.error('MOVOKA KOBIS live data error:', error);
+        return json({
+          ok: false,
+          code: 'KOBIS_LIVE_DATA_ERROR',
+          message: 'KOBIS 공식 영화 데이터를 불러오지 못했습니다.'
+        }, 502, { 'cache-control': 'no-store' });
       }
-      return json({
-        ok: false,
-        code: 'MOVIE_DATA_NOT_READY',
-        message: '오늘의 영화 데이터가 아직 준비되지 않았습니다.'
-      }, 503);
     }
 
     if (url.pathname === '/api/movie-info') {
@@ -199,28 +125,41 @@ export default {
       if (!movieCd) return json({ ok: false, message: 'movieCd가 필요합니다.' }, 400);
 
       try {
-        const info = await getMovieInfoFromKobis(movieCd);
-        return json({ ok: true, ...info }, 200, { 'cache-control': 'public, max-age=21600' });
+        // 영화 정보 버튼을 누를 때도 공식 KOBIS 데이터를 실시간으로 조회합니다.
+        const rows = await fetchKobis(5000);
+        const movie = rows.find(row => String(row?.movieCd) === String(movieCd));
+        if (!movie) {
+          return json({ ok: true, plot: '', director: '', trailer: '' });
+        }
+
+        return json({
+          ok: true,
+          plot: String(movie.synop || '').trim(),
+          director: String(movie.director || '').trim(),
+          trailer: ''
+        }, 200, { 'cache-control': 'no-store' });
       } catch (error) {
         console.error('MOVOKA movie info error:', error);
-        return json({ ok: false, message: '영화 정보를 불러오지 못했습니다.' }, 502);
+        return json({ ok: false, message: '영화 정보를 불러오지 못했습니다.' }, 502, { 'cache-control': 'no-store' });
       }
     }
 
-    if (url.pathname === '/internal/refresh-movies' && request.method === 'POST') {
-      const data = await collectMovies(env);
-      if (!data.ok) return json(data, 503);
-      await env.MOVIE_DATA.put('latest', JSON.stringify(data));
-      return json({ ok: true, basedAt: data.basedAt, count: data.movies.length });
-    }
-
-    // 비공식 영화관 수집 기능은 제거했습니다. 기존 호출과의 호환을 위해 안전하게 응답만 반환합니다.
+    // 이전 비공식 수집 엔드포인트는 완전히 비활성화합니다.
     if (url.pathname === '/internal/refresh-cinema-links' && request.method === 'POST') {
       return json({
         ok: false,
         disabled: true,
-        message: '공식적으로 허용된 영화관 상영 데이터 소스가 없어 비공식 수집을 사용하지 않습니다.'
+        message: '공식적으로 허용된 영화관 체인 데이터 연동이 없어 비공식 수집을 사용하지 않습니다.'
       }, 501);
+    }
+
+    // 기존 KV 새로고침 호출도 더 이상 KOBIS 데이터를 저장하지 않도록 비활성화합니다.
+    if (url.pathname === '/internal/refresh-movies' && request.method === 'POST') {
+      return json({
+        ok: false,
+        disabled: true,
+        message: 'KOBIS 결과의 지속 저장을 하지 않는 구조로 변경되었습니다. /api/movies에서 실시간 조회합니다.'
+      }, 410);
     }
 
     const assetResponse = await env.ASSETS.fetch(request);
@@ -228,17 +167,10 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-17" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-18" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
     return assetResponse;
-  },
-
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil((async () => {
-      const data = await collectMovies(env);
-      if (data.ok) await env.MOVIE_DATA.put('latest', JSON.stringify(data));
-    })());
   }
 };
