@@ -11,6 +11,7 @@ const GENRE_MAP = {
   '전쟁': '전쟁', '다큐멘터리': '다큐멘터리'
 };
 
+// 각 영화관의 현재 영화/예매 페이지를 확인해 해당 체인에서 실제로 노출되는 영화만 연결합니다.
 const CINEMA_SOURCES = {
   CGV: 'https://cgv.co.kr/cnm/movieBook',
   롯데시네마: 'https://www.lottecinema.co.kr/NLCMW/ticketing?filter=movie',
@@ -97,7 +98,8 @@ async function getPosterMap(targetDt) {
 }
 
 async function getMovieInfoFromKobis(movieCd) {
-  // KOBIS 현재 상영작 자료에서 줄거리와 감독 정보를 가져옵니다. KOFIC Open API 호출을 추가하지 않습니다.
+  // KOBIS가 제공하는 현재 실시간 영화 목록에는 줄거리와 감독 정보가 함께 포함됩니다.
+  // 사용자가 영화 정보 버튼을 누를 때만 1회 조회하므로 일일 영화 수집 API 호출량을 늘리지 않습니다.
   const response = await fetchWithTimeout(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainRealTicket.do`, { redirect: 'follow', headers: { accept: 'application/json' } }, 5000);
   if (!response.ok) throw new Error(`KOBIS_MOVIE_INFO_HTTP_${response.status}`);
   const rows = await response.json();
@@ -159,7 +161,10 @@ export default {
     if (url.pathname === '/api/movies') {
       let stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
       if (stored?.ok && Array.isArray(stored.movies)) {
-        if (!stored.cinemaCheckedAt) { const refreshed = await refreshCinemaLinks(env); if (refreshed) stored = refreshed; }
+        // 영화관 정보는 최대 3시간마다 다시 확인해 종료/신규 상영작 변화를 반영합니다.
+        const checkedAt = stored.cinemaCheckedAt ? Date.parse(stored.cinemaCheckedAt) : 0;
+        const cinemaStale = !checkedAt || (Date.now() - checkedAt > 3 * 60 * 60 * 1000);
+        if (cinemaStale) { const refreshed = await refreshCinemaLinks(env); if (refreshed) stored = refreshed; }
         return json(stored, 200, { 'cache-control': 'public, max-age=300' });
       }
       return json({ ok: false, code: 'MOVIE_DATA_NOT_READY', message: '오늘의 영화 데이터가 아직 준비되지 않았습니다.' }, 503);
@@ -193,7 +198,7 @@ export default {
     const assetResponse = await env.ASSETS.fetch(request);
     const contentType = assetResponse.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
-      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-12" defer></script>', { html: true }); } }).transform(assetResponse);
+      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-13" defer></script>', { html: true }); } }).transform(assetResponse);
     }
     return assetResponse;
   },
