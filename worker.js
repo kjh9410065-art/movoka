@@ -3,6 +3,7 @@
 
 // KOBIS 공식 REST 엔드포인트는 www.kobis.or.kr을 사용합니다.
 const KOFIC_BASE = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
+const KOBIS_WEB_BASE = 'https://www.kobis.or.kr';
 
 const GENRE_MAP = {
   '공포(호러)': '공포', '호러': '공포', '코미디': '코미디', '스릴러': '스릴러',
@@ -55,6 +56,30 @@ async function getKoficJson(url) {
   return data;
 }
 
+async function getPosterMap(targetDt) {
+  // KOBIS Open API에는 포스터 URL이 없으므로 KOBIS 공식 영화 페이지의
+  // 공개 데이터에서 같은 영화코드의 thumbUrl을 찾아 포스터를 연결합니다.
+  const url = new URL(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainDailyBoxOffice.do`);
+  url.searchParams.set('startDate', `${targetDt.slice(0, 4)}.${targetDt.slice(4, 6)}.${targetDt.slice(6, 8)}`);
+  url.searchParams.set('endDate', `${targetDt.slice(0, 4)}.${targetDt.slice(4, 6)}.${targetDt.slice(6, 8)}`);
+
+  try {
+    const response = await fetch(url, { redirect: 'follow' });
+    const html = await response.text();
+    const map = {};
+    const pattern = /"movieCd"\s*:\s*"(\d+)"[\s\S]{0,1800}?"thumbUrl"\s*:\s*"([^"]+)"/g;
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      map[match[1]] = match[2].startsWith('http') ? match[2] : `${KOBIS_WEB_BASE}${match[2]}`;
+    }
+    return map;
+  } catch (error) {
+    // 포스터 조회가 실패해도 영화 정보 자체는 정상적으로 보여줍니다.
+    console.error('MOVOKA KOBIS poster error:', error);
+    return {};
+  }
+}
+
 async function getMovies(env) {
   const key = env.KOBIS_API_KEY;
   if (!key) {
@@ -76,6 +101,7 @@ async function getMovies(env) {
 
   const dailyList = boxofficeData?.boxOfficeResult?.dailyBoxOfficeList || [];
   const candidates = dailyList.slice(0, 20);
+  const posterMap = await getPosterMap(targetDt);
 
   const movies = await Promise.all(candidates.map(async item => {
     const detailUrl = new URL(`${KOFIC_BASE}/movie/searchMovieInfo.json`);
@@ -96,6 +122,8 @@ async function getMovies(env) {
         audience: Number(item.audiAcc) || 0,
         screens: Number(item.scrnCnt) || 0,
         shows: Number(item.showCnt) || 0,
+        // KOBIS 공식 포스터 썸네일 URL을 연결합니다.
+        poster: posterMap[movie.movieCd] || '',
         // 실제 극장별 상영 여부가 확인되기 전까지는 임의의 극장명을 넣지 않습니다.
         cinemas: []
       };
