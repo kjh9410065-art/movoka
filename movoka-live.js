@@ -9,6 +9,7 @@
   };
   let movies=[];
   let activeGenre='전체';
+  let screeningDate='';
   const list=document.getElementById('movies');
   const tabs=document.getElementById('tabs');
   const searchOld=document.getElementById('search');
@@ -43,7 +44,7 @@
     document.getElementById('movieInfoModal')?.remove();
     const modal=document.createElement('div');
     modal.id='movieInfoModal';
-    modal.innerHTML=`<div class="movie-modal-backdrop" data-close="1"><div class="movie-modal" role="dialog" aria-modal="true" aria-label="영화 정보"><button class="movie-modal-close" type="button" aria-label="닫기">×</button><div class="movie-modal-head">${movie.poster?`<img class="movie-modal-poster" src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">`:''}<div><h3>${esc(movie.title)}</h3><p class="movie-modal-meta">${esc(movie.date||'개봉일 정보 없음')}${movie.rating?` · ${esc(movie.rating)}`:''}${movie.runtime?` · ${esc(movie.runtime)}분`:''}</p></div></div><div class="movie-modal-section"><strong>줄거리</strong><p class="movie-plot">불러오는 중...</p></div><div class="movie-modal-section"><strong>감독</strong><p class="movie-director">불러오는 중...</p></div></div></div>`;
+    modal.innerHTML=`<div class="movie-modal-backdrop" data-close="1"><div class="movie-modal" role="dialog" aria-modal="true" aria-label="영화 정보"><button class="movie-modal-close" type="button" aria-label="닫기">×</button><div class="movie-modal-head">${movie.poster?`<img class="movie-modal-poster" src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">`:''}<div><h3>${esc(movie.title)}</h3><p class="movie-modal-meta">개봉 ${esc(movie.date||'개봉일 정보 없음')}${movie.rating?` · ${esc(movie.rating)}`:''}${movie.runtime?` · ${esc(movie.runtime)}분`:''}</p></div></div><div class="movie-modal-section"><strong>줄거리</strong><p class="movie-plot">불러오는 중...</p></div><div class="movie-modal-section"><strong>감독</strong><p class="movie-director">불러오는 중...</p></div></div></div>`;
     document.body.appendChild(modal);
     const close=()=>modal.remove();
     modal.querySelector('.movie-modal-close').addEventListener('click',close);
@@ -83,7 +84,7 @@
       return;
     }
 
-    list.innerHTML=filtered.map(movie=>`<article class="card"><div class="poster">${movie.poster?`<img src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">`:'포스터 준비 중'}</div><div class="info"><button class="movie-info-btn" type="button" data-movie-id="${esc(movie.id)}">영화 정보</button><div class="title">${esc(movie.title)}</div><div class="meta">${esc(movie.date||'개봉일 정보 없음')}${movie.rating?` · ${esc(movie.rating)}`:''}${movie.runtime?` · ${esc(movie.runtime)}분`:''}</div><div class="genre-list">${(movie.genres||[]).map(g=>`<span class="genre">${esc(g)}</span>`).join('')}</div><div class="buttons">${(movie.cinemas||[]).map(c=>official[c]?`<a class="btn cinema-btn" href="${official[c]}" target="_blank" rel="noopener">${esc(c)}</a>`:'').join('')}</div></div></article>`).join('');
+    list.innerHTML=filtered.map(movie=>`<article class="card"><div class="poster">${movie.poster?`<img src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">`:'포스터 준비 중'}</div><div class="info"><button class="movie-info-btn" type="button" data-movie-id="${esc(movie.id)}">영화 정보</button><div class="title">${esc(movie.title)}</div><div class="meta">상영일 ${esc(screeningDate||'오늘')}${movie.rating?` · ${esc(movie.rating)}`:''}${movie.runtime?` · ${esc(movie.runtime)}분`:''}</div><div class="genre-list">${(movie.genres||[]).map(g=>`<span class="genre">${esc(g)}</span>`).join('')}</div><div class="buttons">${(movie.cinemas||[]).map(c=>official[c]?`<a class="btn cinema-btn" href="${official[c]}" target="_blank" rel="noopener">${esc(c)}</a>`:'').join('')}</div></div></article>`).join('');
     list.querySelectorAll('.movie-info-btn').forEach(button=>button.addEventListener('click',()=>{
       const movie=movies.find(item=>String(item.id)===String(button.dataset.movieId));
       if(movie)openMovieInfo(movie);
@@ -97,7 +98,8 @@
       const data=await response.json();
       if(!response.ok||!data.ok)throw new Error(data.message||'영화 데이터 연결 실패');
       movies=Array.isArray(data.movies)?data.movies:[];
-      if(updated)updated.textContent=`KOBIS 기준 ${data.basedAt.slice(0,4)}-${data.basedAt.slice(4,6)}-${data.basedAt.slice(6,8)} · ${movies.length}편 · 실시간`;
+      screeningDate=String(data.basedAt||'').replace(/^(\d{4})(\d{2})(\d{2})$/,'$1-$2-$3');
+      if(updated)updated.textContent=`KOBIS 기준 ${screeningDate} · ${movies.length}편 · 실시간`;
       renderTabs();
       renderMovies();
     }catch(error){
