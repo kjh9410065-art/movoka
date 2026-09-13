@@ -3,9 +3,10 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const key = env.KOPIS_API_KEY;
 
+    // 공연 목록 API
     if (url.pathname === '/api/performances') {
-      const key = env.KOPIS_API_KEY;
       if (!key) return Response.json({ error: 'KOPIS_API_KEY is not configured' }, { status: 500 });
 
       const now = new Date();
@@ -31,21 +32,36 @@ export default {
       if (area) api.searchParams.set('signgucode', area);
       if (keyword) api.searchParams.set('shprfnm', keyword);
 
-      try {
-        const response = await fetch(api.toString());
-        const body = await response.text();
-        return new Response(body, {
-          status: response.status,
-          headers: {
-            'Content-Type': 'application/xml; charset=utf-8',
-            'Cache-Control': 'no-store'
-          }
-        });
-      } catch {
-        return Response.json({ error: 'KOPIS request failed' }, { status: 502 });
-      }
+      return proxyKopis(api, key);
+    }
+
+    // 공연 상세 API
+    if (url.pathname === '/api/performance') {
+      if (!key) return Response.json({ error: 'KOPIS_API_KEY is not configured' }, { status: 500 });
+      const id = url.searchParams.get('mt20id');
+      if (!id || !/^PF\d+$/.test(id)) return Response.json({ error: 'Invalid mt20id' }, { status: 400 });
+      const api = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
+      api.searchParams.set('service', key);
+      return proxyKopis(api, key);
     }
 
     return env.ASSETS.fetch(request);
   }
 };
+
+// KOPIS 응답을 그대로 전달하되 API 키는 서버에서만 사용합니다.
+async function proxyKopis(api) {
+  try {
+    const response = await fetch(api.toString());
+    const body = await response.text();
+    return new Response(body, {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Cache-Control': 'no-store'
+      }
+    });
+  } catch {
+    return Response.json({ error: 'KOPIS request failed' }, { status: 502 });
+  }
+}
