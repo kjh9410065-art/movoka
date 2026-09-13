@@ -1,7 +1,6 @@
 // MOVOKA Cloudflare Worker
 // 정적 HTML은 ASSETS에서 제공하고 /api/movies는 Worker에서 KOFIC(KOBIS) API를 호출합니다.
 
-// KOBIS 공식 REST 엔드포인트는 www.kobis.or.kr을 사용합니다.
 const KOFIC_BASE = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
 const KOBIS_WEB_BASE = 'https://www.kobis.or.kr';
 
@@ -57,27 +56,22 @@ async function getKoficJson(url) {
 }
 
 async function getPosterMap(targetDt) {
-  // KOBIS Open API에는 포스터 URL이 없으므로 KOBIS 공식 영화 페이지의
-  // 공개 데이터에서 같은 영화코드의 thumbUrl을 찾아 포스터를 연결합니다.
+  // KOBIS 공식 영화 페이지에서 같은 영화코드의 공식 포스터 thumbUrl을 가져옵니다.
   const url = new URL(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainDailyBoxOffice.do`);
-  url.searchParams.set('startDate', `${targetDt.slice(0, 4)}.${targetDt.slice(4, 6)}.${targetDt.slice(6, 8)}`);
-  url.searchParams.set('endDate', `${targetDt.slice(0, 4)}.${targetDt.slice(4, 6)}.${targetDt.slice(6, 8)}`);
+  url.searchParams.set('startDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
+  url.searchParams.set('endDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
 
-  try {
-    const response = await fetch(url, { redirect: 'follow' });
-    const html = await response.text();
-    const map = {};
-    const pattern = /"movieCd"\s*:\s*"(\d+)"[\s\S]{0,1800}?"thumbUrl"\s*:\s*"([^"]+)"/g;
-    let match;
-    while ((match = pattern.exec(html)) !== null) {
-      map[match[1]] = match[2].startsWith('http') ? match[2] : `${KOBIS_WEB_BASE}${match[2]}`;
-    }
-    return map;
-  } catch (error) {
-    // 포스터 조회가 실패해도 영화 정보 자체는 정상적으로 보여줍니다.
-    console.error('MOVOKA KOBIS poster error:', error);
-    return {};
+  const response = await fetch(url, { redirect: 'follow' });
+  if (!response.ok) throw new Error(`KOBIS_POSTER_PAGE_HTTP_${response.status}`);
+  const rows = await response.json();
+  const map = new Map();
+
+  // 해당 날짜의 공식 데이터는 JSON 배열로 반환되므로 movieCd → thumbUrl을 정확히 매칭합니다.
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row?.movieCd || !row?.thumbUrl) continue;
+    map.set(String(row.movieCd), new URL(row.thumbUrl, KOBIS_WEB_BASE).href);
   }
+  return map;
 }
 
 async function getMovies(env) {
@@ -101,7 +95,14 @@ async function getMovies(env) {
 
   const dailyList = boxofficeData?.boxOfficeResult?.dailyBoxOfficeList || [];
   const candidates = dailyList.slice(0, 20);
-  const posterMap = await getPosterMap(targetDt);
+
+  let posterMap = new Map();
+  try {
+    posterMap = await getPosterMap(targetDt);
+  } catch (error) {
+    // 포스터 조회 실패가 영화 목록 전체를 막지 않도록 합니다.
+    console.error('MOVOKA KOBIS poster error:', error);
+  }
 
   const movies = await Promise.all(candidates.map(async item => {
     const detailUrl = new URL(`${KOFIC_BASE}/movie/searchMovieInfo.json`);
@@ -122,8 +123,8 @@ async function getMovies(env) {
         audience: Number(item.audiAcc) || 0,
         screens: Number(item.scrnCnt) || 0,
         shows: Number(item.showCnt) || 0,
-        // KOBIS 공식 포스터 썸네일 URL을 연결합니다.
-        poster: posterMap[movie.movieCd] || '',
+        // KOBIS 공식 데이터에서 확인된 포스터만 표시합니다.
+        poster: posterMap.get(String(movie.movieCd)) || '',
         // 실제 극장별 상영 여부가 확인되기 전까지는 임의의 극장명을 넣지 않습니다.
         cinemas: []
       };
@@ -155,7 +156,7 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-2" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
