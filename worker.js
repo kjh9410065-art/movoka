@@ -11,6 +11,14 @@ const GENRE_MAP = {
   '전쟁': '전쟁', '다큐멘터리': '다큐멘터리'
 };
 
+// 영화관별 공식 예매/상영 페이지입니다.
+// 실제 상영작 제목이 페이지에서 확인된 경우에만 카드에 버튼을 노출합니다.
+const CINEMA_SOURCES = {
+  CGV: 'https://cgv.co.kr/cnm/movieBook/movie',
+  롯데시네마: 'https://www.lottecinema.co.kr/NLCHS/Ticketing',
+  메가박스: 'https://www.megabox.co.kr/booking/timetable'
+};
+
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -20,6 +28,52 @@ function json(data, status = 200, extraHeaders = {}) {
 
 function normalizeGenres(genres = []) {
   return [...new Set(genres.map(item => GENRE_MAP[item.genreNm] || item.genreNm).filter(Boolean))];
+}
+
+function normalizeTitle(value = '') {
+  // 영화관 페이지와 KOBIS 제목의 괄호/기호/공백 차이를 줄여 비교합니다.
+  return String(value)
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/[^0-9a-z가-힣]/gi, '');
+}
+
+async function fetchCinemaPage(url) {
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      headers: {
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153 Safari/537.36',
+        accept: 'text/html,application/xhtml+xml'
+      }
+    });
+    if (!response.ok) return '';
+    return await response.text();
+  } catch (error) {
+    console.error(`MOVOKA cinema source error (${url}):`, error);
+    return '';
+  }
+}
+
+async function getCinemaAvailability(movies) {
+  // 하루 데이터 수집 시 영화관 공식 페이지를 한 번씩만 확인합니다.
+  const pages = await Promise.all(Object.entries(CINEMA_SOURCES).map(async ([name, url]) => {
+    const html = await fetchCinemaPage(url);
+    return [name, normalizeTitle(html)];
+  }));
+
+  const pageMap = new Map(pages);
+  return movies.map(movie => {
+    const title = normalizeTitle(movie.title);
+    const cinemas = title
+      ? Object.keys(CINEMA_SOURCES).filter(name => {
+          const pageText = pageMap.get(name) || '';
+          return pageText.includes(title);
+        })
+      : [];
+    return { ...movie, cinemas };
+  });
 }
 
 function getKoreaDateMinusOne() {
@@ -108,14 +162,19 @@ async function collectMovies(env) {
   });
 
   const [posterMap, detailMovies] = await Promise.all([posterPromise, Promise.all(detailPromises)]);
+  const movies = detailMovies.filter(Boolean).map(movie => ({
+    ...movie,
+    poster: posterMap.get(String(movie.id)) || ''
+  })).sort((a, b) => a.rank - b.rank);
+
+  // 영화관 공식 페이지에서 실제 상영작으로 확인된 체인만 저장합니다.
+  const verifiedMovies = await getCinemaAvailability(movies);
+
   return {
     ok: true,
     source: 'KOFIC/KOBIS',
     basedAt: targetDt,
-    movies: detailMovies.filter(Boolean).map(movie => ({
-      ...movie,
-      poster: posterMap.get(String(movie.id)) || ''
-    })).sort((a, b) => a.rank - b.rank)
+    movies: verifiedMovies
   };
 }
 
@@ -143,7 +202,7 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-8" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-9" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
