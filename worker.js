@@ -28,11 +28,13 @@ export default {
       api.searchParams.set('eddate', endDate);
       api.searchParams.set('cpage', String(page));
       api.searchParams.set('rows', String(rows));
+      // 현재 공연중인 작품만 조회합니다. 예정작은 다음 단계에서 별도 영역으로 다룹니다.
+      api.searchParams.set('prfstate', '02');
       if (genre) api.searchParams.set('shcate', genre);
       if (area) api.searchParams.set('signgucode', area);
       if (keyword) api.searchParams.set('shprfnm', keyword);
 
-      return proxyKopis(api, key);
+      return proxyKopis(api);
     }
 
     // 공연 상세 API
@@ -42,7 +44,7 @@ export default {
       if (!id || !/^PF\d+$/.test(id)) return Response.json({ error: 'Invalid mt20id' }, { status: 400 });
       const api = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
       api.searchParams.set('service', key);
-      return proxyKopis(api, key);
+      return proxyKopis(api);
     }
 
     return env.ASSETS.fetch(request);
