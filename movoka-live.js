@@ -1,5 +1,5 @@
-// MOVOKA 실시간 영화 화면
-// KOBIS 데이터는 Cloudflare Pages Function(/api/movies)을 통해 안전하게 가져옵니다.
+// MOVOKA 영화 화면
+// 평소에는 KV에 저장된 일일 데이터를 즉시 읽고, 최초 1회만 빈 KV를 채웁니다.
 (() => {
   const genreOrder = ['전체','공포','코미디','스릴러','액션','드라마','멜로/로맨스','애니메이션','SF','판타지','범죄','미스터리','모험','전쟁','다큐멘터리'];
   const official = {
@@ -16,7 +16,6 @@
   const updated = document.getElementById('updated');
   if (!list || !tabs || !searchOld) return;
 
-  // 기존 검색 이벤트와 충돌하지 않도록 검색창을 새 DOM으로 교체합니다.
   const search = searchOld.cloneNode(true);
   searchOld.replaceWith(search);
 
@@ -25,7 +24,6 @@
   }[ch]));
 
   function renderTabs() {
-    // 실제 데이터에 존재하는 장르만 활성화하고, 요청한 주요 장르는 기본 탭으로 유지합니다.
     tabs.innerHTML = genreOrder.map(genre => {
       const exists = genre === '전체' || movies.some(movie => (movie.genres || []).includes(genre));
       return `<button class="tab ${genre === activeGenre ? 'active' : ''}" ${exists ? '' : 'disabled style="opacity:.45"'} data-genre="${esc(genre)}">${esc(genre)}</button>`;
@@ -72,16 +70,27 @@
 
   async function load() {
     try {
-      const response = await fetch('/api/movies', { headers: { Accept: 'application/json' } });
-      const data = await response.json();
+      let response = await fetch('/api/movies', { headers: { Accept: 'application/json' } });
+      let data = await response.json();
+
+      // KV가 아직 비어 있으면 최초 1회만 수집 작업을 실행해 데이터를 저장합니다.
+      if (response.status === 503 && data.code === 'MOVIE_DATA_NOT_READY') {
+        if (updated) updated.textContent = '오늘의 영화 데이터를 처음 불러오는 중...';
+        const seedResponse = await fetch('/internal/refresh-movies', { method: 'POST' });
+        const seedData = await seedResponse.json();
+        if (!seedResponse.ok || !seedData.ok) throw new Error(seedData.message || '초기 영화 데이터 생성 실패');
+        response = await fetch('/api/movies', { headers: { Accept: 'application/json' } });
+        data = await response.json();
+      }
+
       if (!response.ok || !data.ok) throw new Error(data.message || '영화 데이터 연결 실패');
       movies = Array.isArray(data.movies) ? data.movies : [];
       if (updated) updated.textContent = `자료 기준일 ${data.basedAt.slice(0,4)}-${data.basedAt.slice(4,6)}-${data.basedAt.slice(6,8)} · ${movies.length}편`;
       renderTabs();
       renderMovies();
     } catch (error) {
-      if (updated) updated.textContent = '데이터 연결 준비 중';
-      list.innerHTML = '<div class="error">실시간 영화 데이터 연결이 아직 완료되지 않았습니다.<br>Cloudflare 환경변수 <b>KOBIS_API_KEY</b> 등록 후 자동으로 표시됩니다.</div>';
+      if (updated) updated.textContent = '영화 데이터 연결 실패';
+      list.innerHTML = `<div class="error">영화 데이터를 불러오지 못했습니다.<br>${esc(error.message || '잠시 후 다시 시도해주세요.')}</div>`;
     }
   }
 
