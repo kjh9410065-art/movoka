@@ -99,7 +99,6 @@ async function collectMovies(env) {
         audience: Number(item.audiAcc) || 0,
         screens: Number(item.scrnCnt) || 0,
         poster: '',
-        // 실제 극장별 상영 여부가 확인되기 전까지 임의의 극장명을 넣지 않습니다.
         cinemas: []
       };
     } catch (error) {
@@ -125,14 +124,14 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/movies') {
-      // 홈페이지에서는 KOFIC API를 호출하지 않고 저장된 데이터만 읽습니다.
+      // 정상 방문에서는 KOFIC API를 호출하지 않고 KV에 저장된 데이터만 읽습니다.
       const stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
       if (stored?.ok) return json(stored, 200, { 'cache-control': 'public, max-age=3600' });
       return json({ ok: false, code: 'MOVIE_DATA_NOT_READY', message: '오늘의 영화 데이터가 아직 준비되지 않았습니다.' }, 503);
     }
 
-    // 초기 데이터 생성이나 수동 갱신이 필요할 때 사용할 내부 경로입니다.
-    if (url.pathname === '/internal/refresh-movies') {
+    if (url.pathname === '/internal/refresh-movies' && request.method === 'POST') {
+      // 첫 배포 후 KV가 비어 있을 때 한 번만 초기 데이터를 생성합니다.
       const data = await collectMovies(env);
       if (!data.ok) return json(data, 503);
       await env.MOVIE_DATA.put('latest', JSON.stringify(data));
@@ -144,7 +143,7 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-7" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-8" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
