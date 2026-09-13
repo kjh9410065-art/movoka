@@ -110,7 +110,7 @@ async function getKoficJson(url) {
 async function getPosterMap(targetDt) {
   const url = new URL(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainDailyBoxOffice.do`);
   url.searchParams.set('startDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
-  url.searchParams.set('endDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
+  url.searchParams.set('endDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(8,10)}`);
   const response = await fetch(url, { redirect: 'follow' });
   if (!response.ok) throw new Error(`KOBIS_POSTER_PAGE_HTTP_${response.status}`);
   const rows = await response.json();
@@ -201,9 +201,15 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/movies') {
-      // 일반 방문에서는 저장된 영화 데이터만 즉시 반환합니다.
-      const stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
-      if (stored?.ok) return json(stored, 200, { 'cache-control': 'public, max-age=3600' });
+      // 기존 KV 데이터에 영화관 정보가 없으면 이번 요청에서 한 번만 보강합니다.
+      let stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
+      if (stored?.ok && Array.isArray(stored.movies)) {
+        if (!stored.cinemaCheckedAt) {
+          const refreshed = await refreshCinemaLinks(env);
+          if (refreshed) stored = refreshed;
+        }
+        return json(stored, 200, { 'cache-control': 'public, max-age=300' });
+      }
       return json({ ok: false, code: 'MOVIE_DATA_NOT_READY', message: '오늘의 영화 데이터가 아직 준비되지 않았습니다.' }, 503);
     }
 
@@ -227,7 +233,7 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-10" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-11" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
