@@ -1,7 +1,17 @@
 // MOVOKA Cloudflare Worker
 // KOPIS API 요청은 서버에서 처리하고, 기본 공연 목록은 하루 한 번 캐시로 갱신합니다.
 
-const SNAPSHOT_CACHE_KEY = 'https://movoka-cache.local/api/performances?rows=30&ticketable=1';
+const SNAPSHOT_PREFIX = 'https://movoka-cache.local/api/performances/snapshot/';
+const SNAPSHOT_TTL_DAYS = 7;
+
+function snapshotKey(date) {
+  return `${SNAPSHOT_PREFIX}${date}`;
+}
+
+function dateStamp(date) {
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}`;
+}
 
 export default {
   async fetch(request, env) {
@@ -26,11 +36,11 @@ export default {
       const area = url.searchParams.get('signgucodesub') || url.searchParams.get('signgucode') || '';
       const keyword = url.searchParams.get('shprfnm') || '';
 
-      // 검색/장르/지역 필터가 없는 기본 목록은 하루 1회 갱신된 스냅샷을 먼저 사용합니다.
+      // 검색/장르/지역 필터가 없는 기본 목록은 가장 최근의 일일 스냅샷을 사용합니다.
       const isDefaultList = !genre && !area && !keyword && page === 1 && ticketable && rows <= 30 && !url.searchParams.has('stdate') && !url.searchParams.has('eddate');
       if (isDefaultList) {
-        const cached = await caches.default.match(SNAPSHOT_CACHE_KEY);
-        if (cached) return cached;
+        const latest = await findLatestSnapshot();
+        if (latest) return latest;
       }
 
       const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
@@ -46,7 +56,7 @@ export default {
 
       if (!ticketable) return proxyKopis(api);
 
-      return filterTicketable(api, key, isDefaultList);
+      return filterTicketable(api, key, false);
     }
 
     if (url.pathname === '/api/performance') {
@@ -75,7 +85,7 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  // Cloudflare Cron: 매일 KOPIS에서 기본 공연 목록을 받아 캐시 스냅샷을 갱신합니다.
+  // Cloudflare Cron: 매일 KOPIS에서 기본 공연 목록을 받아 새 스냅샷을 만듭니다.
   async scheduled(controller, env, ctx) {
     if (!env.KOPIS_API_KEY) return;
 
@@ -93,10 +103,42 @@ export default {
     api.searchParams.set('rows', '30');
     api.searchParams.set('prfstate', '02');
 
-    // 기본 목록과 공식 예매 URL을 함께 확인해 매일 새 스냅샷을 만듭니다.
-    ctx.waitUntil(filterTicketable(api, env.KOPIS_API_KEY, true));
+    // 기본 목록과 공식 예매 URL을 확인한 뒤 오늘 날짜의 스냅샷을 저장합니다.
+    ctx.waitUntil(refreshSnapshot(api, env.KOPIS_API_KEY, now));
   }
 };
+
+async function findLatestSnapshot() {
+  // 오늘부터 최대 7일 전까지 확인해 Cron 지연이 있어도 최신 데이터를 사용할 수 있게 합니다.
+  for (let age = 0; age <= SNAPSHOT_TTL_DAYS; age++) {
+    const date = new Date();
+    date.setUTCDate(date.getUTCDate() - age);
+    const cached = await caches.default.match(snapshotKey(dateStamp(date)));
+    if (cached) return cached;
+  }
+  return null;
+}
+
+async function refreshSnapshot(api, key, now) {
+  const response = await filterTicketable(api, key, false);
+  if (!response.ok) return;
+
+  const todayKey = snapshotKey(dateStamp(now));
+  const snapshot = new Response(await response.clone().text(), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/xml; charset=utf-8',
+      // 각 일자 스냅샷은 최대 7일까지만 유효합니다.
+      'Cache-Control': `public, max-age=${SNAPSHOT_TTL_DAYS * 86400}`
+    }
+  });
+  await caches.default.put(todayKey, snapshot);
+
+  // 7일보다 오래된 일자 스냅샷은 명시적으로 삭제합니다.
+  const expired = new Date(now);
+  expired.setUTCDate(expired.getUTCDate() - (SNAPSHOT_TTL_DAYS + 1));
+  await caches.default.delete(snapshotKey(dateStamp(expired)));
+}
 
 async function filterTicketable(api, key, cacheSnapshot = false) {
   try {
@@ -120,20 +162,13 @@ async function filterTicketable(api, key, cacheSnapshot = false) {
       }
     }));
 
-    const result = new Response(`<dbs>${filtered.filter(Boolean).join('')}</dbs>`, {
+    return new Response(`<dbs>${filtered.filter(Boolean).join('')}</dbs>`, {
       status: 200,
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
-        // 캐시가 갱신되지 않는 상황에서도 최대 7일까지만 오래된 스냅샷을 허용합니다.
-        'Cache-Control': 'public, max-age=604800'
+        'Cache-Control': 'no-store'
       }
     });
-
-    if (cacheSnapshot) {
-      await caches.default.put(SNAPSHOT_CACHE_KEY, result.clone());
-    }
-
-    return result;
   } catch {
     return Response.json({ error: 'KOPIS ticket availability check failed' }, { status: 502 });
   }
