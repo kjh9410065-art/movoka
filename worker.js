@@ -49,11 +49,21 @@ async function fetchCinemaPage(url) {
 }
 
 async function getCinemaAvailability(movies) {
-  const pages = await Promise.all(Object.entries(CINEMA_SOURCES).map(async ([name, url]) => [name, normalizeTitle(await fetchCinemaPage(url))]));
-  const pageMap = new Map(pages);
+  // 영화관 사이트가 서버 렌더링하지 않는 경우에도 기존 빈 배열을 그대로 고정하지 않습니다.
+  // 각 소스의 응답 상태와 HTML을 함께 검사해 실제 페이지에서 확인되는 체인만 넣습니다.
+  const results = await Promise.all(Object.entries(CINEMA_SOURCES).map(async ([name, url]) => {
+    const html = await fetchCinemaPage(url);
+    return [name, { html: normalizeTitle(html), available: Boolean(html) }];
+  }));
+  const pageMap = new Map(results);
   return movies.map(movie => {
     const title = normalizeTitle(movie.title);
-    const cinemas = title ? Object.keys(CINEMA_SOURCES).filter(name => (pageMap.get(name) || '').includes(title)) : [];
+    const cinemas = title
+      ? Object.keys(CINEMA_SOURCES).filter(name => {
+          const source = pageMap.get(name);
+          return source?.available && source.html.includes(title);
+        })
+      : [];
     return { ...movie, cinemas };
   });
 }
@@ -98,18 +108,12 @@ async function getPosterMap(targetDt) {
 }
 
 async function getMovieInfoFromKobis(movieCd) {
-  // KOBIS가 제공하는 현재 실시간 영화 목록에는 줄거리와 감독 정보가 함께 포함됩니다.
-  // 사용자가 영화 정보 버튼을 누를 때만 1회 조회하므로 일일 영화 수집 API 호출량을 늘리지 않습니다.
   const response = await fetchWithTimeout(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainRealTicket.do`, { redirect: 'follow', headers: { accept: 'application/json' } }, 5000);
   if (!response.ok) throw new Error(`KOBIS_MOVIE_INFO_HTTP_${response.status}`);
   const rows = await response.json();
   const movie = (Array.isArray(rows) ? rows : []).find(row => String(row?.movieCd) === String(movieCd));
   if (!movie) return { plot: '', director: '', trailer: '' };
-  return {
-    plot: String(movie.synop || '').trim(),
-    director: String(movie.director || '').trim(),
-    trailer: ''
-  };
+  return { plot: String(movie.synop || '').trim(), director: String(movie.director || '').trim(), trailer: '' };
 }
 
 async function collectMovies(env) {
@@ -131,8 +135,7 @@ async function collectMovies(env) {
       const movie = data?.movieInfoResult?.movieInfo;
       if (!movie) return null;
       return {
-        id: movie.movieCd,
-        title: movie.movieNm,
+        id: movie.movieCd, title: movie.movieNm,
         date: movie.openDt ? `${movie.openDt.slice(0,4)}-${movie.openDt.slice(4,6)}-${movie.openDt.slice(6,8)}` : '',
         genres: normalizeGenres(movie.genres), rating: movie.audits?.[0]?.watchGradeNm || '', runtime: movie.showTm || '',
         rank: Number(item.rank) || 999, audience: Number(item.audiAcc) || 0, screens: Number(item.scrnCnt) || 0, poster: '', cinemas: []
@@ -157,19 +160,21 @@ async function refreshCinemaLinks(env) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-
     if (url.pathname === '/api/movies') {
       let stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
       if (stored?.ok && Array.isArray(stored.movies)) {
-        // 영화관 정보는 최대 3시간마다 다시 확인해 종료/신규 상영작 변화를 반영합니다.
+        // 기존에 저장된 cinemaCheckedAt이 있어도 모든 영화의 cinemas가 비어 있으면 즉시 재검사합니다.
+        const hasCinemaData = stored.movies.some(movie => Array.isArray(movie.cinemas) && movie.cinemas.length > 0);
         const checkedAt = stored.cinemaCheckedAt ? Date.parse(stored.cinemaCheckedAt) : 0;
-        const cinemaStale = !checkedAt || (Date.now() - checkedAt > 3 * 60 * 60 * 1000);
-        if (cinemaStale) { const refreshed = await refreshCinemaLinks(env); if (refreshed) stored = refreshed; }
-        return json(stored, 200, { 'cache-control': 'public, max-age=300' });
+        const cinemaStale = !checkedAt || (Date.now() - checkedAt > 3 * 60 * 60 * 1000) || !hasCinemaData;
+        if (cinemaStale) {
+          const refreshed = await refreshCinemaLinks(env);
+          if (refreshed) stored = refreshed;
+        }
+        return json(stored, 200, { 'cache-control': 'no-store' });
       }
       return json({ ok: false, code: 'MOVIE_DATA_NOT_READY', message: '오늘의 영화 데이터가 아직 준비되지 않았습니다.' }, 503);
     }
-
     if (url.pathname === '/api/movie-info') {
       const movieCd = url.searchParams.get('movieCd');
       if (!movieCd) return json({ ok: false, message: 'movieCd가 필요합니다.' }, 400);
@@ -181,28 +186,24 @@ export default {
         return json({ ok: false, message: '영화 정보를 불러오지 못했습니다.' }, 502);
       }
     }
-
     if (url.pathname === '/internal/refresh-movies' && request.method === 'POST') {
       const data = await collectMovies(env);
       if (!data.ok) return json(data, 503);
       await env.MOVIE_DATA.put('latest', JSON.stringify(data));
       return json({ ok: true, basedAt: data.basedAt, count: data.movies.length });
     }
-
     if (url.pathname === '/internal/refresh-cinema-links' && request.method === 'POST') {
       const data = await refreshCinemaLinks(env);
       if (!data) return json({ ok: false, message: '영화 데이터가 없습니다.' }, 503);
       return json({ ok: true, cinemaCheckedAt: data.cinemaCheckedAt });
     }
-
     const assetResponse = await env.ASSETS.fetch(request);
     const contentType = assetResponse.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
-      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-13" defer></script>', { html: true }); } }).transform(assetResponse);
+      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-14" defer></script>', { html: true }); } }).transform(assetResponse);
     }
     return assetResponse;
   },
-
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async () => {
       const data = await collectMovies(env);
