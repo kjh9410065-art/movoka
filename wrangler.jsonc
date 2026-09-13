@@ -1,5 +1,5 @@
 {
-  "$schema": "https://developers.cloudflare.com/workers/wrangler/config-schema.json",
+  "$schema": "node_modules/wrangler/config-schema.json",
   "name": "movoka",
   "main": "worker.js",
   "compatibility_date": "2026-09-13",
