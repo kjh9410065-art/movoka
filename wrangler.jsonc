@@ -3,6 +3,9 @@
   "name": "movoka",
   "main": "worker.js",
   "compatibility_date": "2026-09-13",
+  "triggers": {
+    "crons": ["0 1 * * *"]
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
