@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="연극, 뮤지컬, 콘서트 등 공연 정보를 한곳에서 찾고 공식 예매처와 공연장을 확인하세요.">
+  <title>MOVOKA | 공연정보</title>
+  <style>
+    :root{--bg:#f6f7fb;--card:#fff;--text:#171923;--muted:#73798a;--line:#e7e9ef;--primary:#5b5bd6;--primary2:#4545b8;--soft:#eef0ff}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif}
+    body.dark{--bg:#0f1117;--card:#181b24;--text:#f4f5f8;--muted:#a2a7b5;--line:#292e3a;--primary:#8b8cff;--primary2:#7071e8;--soft:#242744}
+    button,input,select{font:inherit}.wrap{max-width:1180px;margin:auto;padding:0 20px}
+    header{position:sticky;top:0;z-index:10;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+    nav{height:68px;display:flex;align-items:center;justify-content:space-between}.logo{font-weight:900;font-size:23px;letter-spacing:-1px}.logo span{color:var(--primary)}
+    .theme{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:12px;padding:9px 12px;cursor:pointer}
+    .hero{padding:62px 0 34px}.hero h1{font-size:clamp(32px,5vw,54px);line-height:1.08;margin:0 0 14px;letter-spacing:-2.5px}.hero p{color:var(--muted);margin:0;line-height:1.7}
+    .search{margin-top:28px;display:flex;gap:10px}.search input{flex:1;min-width:0;padding:15px 17px;border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);outline:none}.search button,.primary{border:0;border-radius:14px;background:var(--primary);color:white;font-weight:800;padding:0 22px;cursor:pointer}
+    .filters{display:flex;gap:9px;overflow:auto;padding:8px 0 18px}.chip{white-space:nowrap;border:1px solid var(--line);background:var(--card);color:var(--muted);border-radius:999px;padding:9px 14px;cursor:pointer}.chip.active{background:var(--primary);border-color:var(--primary);color:white}
+    .bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 18px}.count{font-weight:800}.notice{font-size:13px;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding-bottom:70px}.card{background:var(--card);border:1px solid var(--line);border-radius:20px;overflow:hidden;transition:.18s}.card:hover{transform:translateY(-2px);box-shadow:0 12px 30px rgba(0,0,0,.07)}
+    .poster{aspect-ratio:3/4;background:linear-gradient(135deg,var(--soft),var(--card));display:grid;place-items:center;color:var(--muted);font-size:13px}.poster img{width:100%;height:100%;object-fit:cover}.body{padding:17px}.tag{display:inline-block;background:var(--soft);color:var(--primary2);font-size:12px;font-weight:800;padding:5px 8px;border-radius:7px;margin-bottom:9px}.title{font-size:19px;font-weight:850;letter-spacing:-.5px;margin-bottom:12px}.meta{display:grid;gap:7px;color:var(--muted);font-size:13px;line-height:1.45}.actions{display:flex;gap:8px;margin-top:16px}.actions a,.actions button{flex:1;text-align:center;text-decoration:none;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;padding:10px 8px;font-weight:750;cursor:pointer}.actions .primary{background:var(--primary);border-color:var(--primary);color:white}
+    .empty{grid-column:1/-1;text-align:center;padding:70px 20px;color:var(--muted);background:var(--card);border:1px dashed var(--line);border-radius:18px}.loading{grid-column:1/-1;text-align:center;padding:70px;color:var(--muted)}
+    footer{border-top:1px solid var(--line);padding:28px 0;color:var(--muted);font-size:12px;line-height:1.7}
+    @media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.hero{padding-top:42px}.search button{padding:0 16px}}
+    @media(max-width:520px){.wrap{padding:0 14px}.grid{grid-template-columns:1fr 1fr;gap:10px}.body{padding:13px}.title{font-size:16px}.actions a,.actions button{font-size:12px}.notice{display:none}}
+  </style>
+</head>
+<body>
+<header><div class="wrap"><nav><div class="logo">MO<span>V</span>OKA</div><button class="theme" id="themeBtn" aria-label="다크모드 전환">☾</button></nav></div></header>
+<main class="wrap">
+  <section class="hero">
+    <h1>지금 볼 공연,<br>한곳에서 찾기.</h1>
+    <p>연극 · 뮤지컬 · 클래식 · 콘서트 등 공연 정보를 찾고<br>공연장과 공식 예매처까지 바로 확인하세요.</p>
+    <div class="search"><input id="search" placeholder="공연명이나 공연장을 검색하세요"><button id="searchBtn">검색</button></div>
+  </section>
+  <div class="filters" id="filters"></div>
+  <div class="bar"><div class="count" id="count">공연 정보를 불러오는 중...</div><div class="notice">공연 정보는 공식 데이터 기준으로 제공합니다.</div></div>
+  <section class="grid" id="grid"><div class="loading">공연 정보를 불러오는 중입니다.</div></section>
+</main>
+<footer><div class="wrap">공연 정보 출처: 공연예술통합전산망(KOPIS). 데이터 갱신 시점에 따라 실제 공연·예매 정보와 차이가 있을 수 있습니다.</div></footer>
+<script>
+  const categories=[['all','전체'],['AAAA','연극'],['GGGA','뮤지컬'],['CCCA','서양음악(클래식)'],['CCCC','대중음악'],['EEEA','무용'],['JJJA','아동']];
+  let active='all', allData=[];
+  const grid=document.querySelector('#grid'), count=document.querySelector('#count');
+  document.querySelector('#filters').innerHTML=categories.map(([id,name])=>`<button class="chip ${id==='all'?'active':''}" data-id="${id}">${name}</button>`).join('');
+  document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{active=b.dataset.id;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));render();});
+  document.querySelector('#searchBtn').onclick=render; document.querySelector('#search').onkeydown=e=>{if(e.key==='Enter')render()};
+  document.querySelector('#themeBtn').onclick=()=>{document.body.classList.toggle('dark');localStorage.setItem('movoka-dark',document.body.classList.contains('dark'));};
+  if(localStorage.getItem('movoka-dark')==='true')document.body.classList.add('dark');
+  function render(){
+    const q=document.querySelector('#search').value.trim().toLowerCase();
+    const list=allData.filter(x=>(active==='all'||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!q||`${x.prfnm} ${x.fcltynm}`.toLowerCase().includes(q)));
+    count.textContent=`${list.length}개의 공연`;
+    grid.innerHTML=list.length?list.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>';
+  }
+  function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" alt="${esc(x.prfnm)} 포스터" loading="lazy">`:'공연 포스터'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm||'공연명 미정')}</div><div class="meta"><div>📅 ${esc(x.prfpdfrom||'-')} ~ ${esc(x.prfpdto||'-')}</div><div>📍 ${esc(x.fcltynm||'-')}</div><div>👥 ${esc(x.prfcast||'출연진 정보 확인')}</div></div><div class="actions"><a href="${esc(x.prfurl||'#')}" target="_blank" rel="noopener noreferrer">공식정보</a><button class="primary" onclick="alert('예매 링크는 공식 데이터 연동 단계에서 연결됩니다.')">예매</button></div></div></article>`}
+  function esc(v){return String(v??'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'}[m]));}
+  async function load(){try{const r=await fetch('/api/performances');if(!r.ok)throw new Error();const xml=await r.text();const doc=new DOMParser().parseFromString(xml,'text/xml');allData=[...doc.querySelectorAll('db')].map(n=>Object.fromEntries(['mt20id','prfnm','prfpdfrom','prfpdto','fcltynm','poster','genrenm','prfcast','prfurl'].map(k=>[k,n.querySelector(k)?.textContent||''])));render();}catch(e){count.textContent='공연 정보 연결 준비 중';grid.innerHTML='<div class="empty">KOPIS API 연결 설정이 필요합니다.<br>Cloudflare Secret 등록 후 공식 공연 데이터가 표시됩니다.</div>';}}
+  load();
+</script>
+</body>
+</html>
