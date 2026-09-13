@@ -11,7 +11,7 @@
   "kv_namespaces": [
     {
       "binding": "MOVIE_DATA",
-      "id": "REPLACE_WITH_MOVOKA_KV_NAMESPACE_ID"
+      "id": "894ab20885c2404e975c6ce2517f0dc8"
     }
   ],
   "triggers": {
