@@ -22,7 +22,7 @@ async function fetchKobis(url, timeoutMs = 8000, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...options, signal: controller.signal, redirect: 'follow', headers: { accept: 'application/json', ...(options.headers || {}) } });
+    const response = await fetch(url, { ...options, signal: controller.signal, redirect: 'follow', headers: { accept: '*/*', ...(options.headers || {}) } });
     if (!response.ok) throw new Error(`KOBIS_HTTP_${response.status}`);
     return response;
   } finally { clearTimeout(timer); }
@@ -41,6 +41,11 @@ function getKoreaDate(offsetDays = 0) {
   const date = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
   date.setUTCDate(date.getUTCDate() + offsetDays);
   return date.toISOString().slice(0, 10).replaceAll('-', '');
+}
+
+function formatKoreaDate(value) {
+  const text = String(value || '').replace(/[^0-9]/g, '');
+  return text.length === 8 ? `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}` : text;
 }
 
 function normalizeGenres(genre = '') {
@@ -65,16 +70,24 @@ function extractAnchorText(html) {
 }
 
 // KOBIS 멀티체인 통계는 매일 24시 이후 전일자 통계로 제공됩니다.
-// 따라서 매일 한국 날짜를 계산해 '어제' 자료를 자동 조회하고 체인 버튼 근거로 사용합니다.
+// 공식 페이지의 검색 폼과 동일하게 POST로 날짜를 전달합니다.
 async function getMultichainMap() {
   const targetDate = getKoreaDate(-1);
-  const url = new URL(KOBIS_MULTICHAIN_URL);
-  url.searchParams.set('loadEnd', '0');
-  url.searchParams.set('searchType', 'search');
-  url.searchParams.set('sSearchFrom', targetDate);
-  url.searchParams.set('sSearchTo', targetDate);
+  const body = new URLSearchParams({
+    loadEnd: '0',
+    searchType: 'search',
+    sSearchFrom: formatKoreaDate(targetDate),
+    sSearchTo: formatKoreaDate(targetDate)
+  });
 
-  const response = await fetchKobis(url, 10000, { headers: { accept: 'text/html,application/xhtml+xml' } });
+  const response = await fetchKobis(KOBIS_MULTICHAIN_URL, 10000, {
+    method: 'POST',
+    headers: {
+      accept: 'text/html,application/xhtml+xml',
+      'content-type': 'application/x-www-form-urlencoded; charset=UTF-8'
+    },
+    body
+  });
   const html = await response.text();
   const map = new Map();
 
@@ -82,14 +95,17 @@ async function getMultichainMap() {
     const rowHtml = rowMatch[1];
     const cells = extractTableCells(rowHtml);
     if (cells.length < 3) continue;
-    const movieCell = (rowHtml.match(/<td\b[^>]*>[\s\S]*?<a\b[^>]*>[\s\S]*?<\/a>[\s\S]*?<\/td>/i) || [])[0];
-    const movieName = extractAnchorText(movieCell || cells[1] || cells[0]);
+
+    // KOBIS 표준 열: 순위 / 영화명 / 체인영화관명 / ...
+    const movieName = extractAnchorText(cells[1]);
     const chainName = normalizeCinemaName(cells[2]);
     if (!movieName || !chainName) continue;
+
     const key = normalizeMovieTitle(movieName);
     if (!map.has(key)) map.set(key, new Set());
     map.get(key).add(chainName);
   }
+
   return { map, checkedDate: targetDate };
 }
 
@@ -114,14 +130,15 @@ async function getLiveMovies() {
 
   const movies = rows
     .filter(row => row?.movieCd && row?.movieNm)
-    // 개봉일이 지나지 않은 예정작과 현재 스크린이 없는 종료작을 제외합니다.
+    // 실시간 예매율 데이터 자체를 현재 극장 상영 목록의 기준으로 사용합니다.
+    // 개봉일이 아직 오지 않은 예정작만 제외합니다.
     .filter(row => {
       const openDate = String(row.openDt || '').replace(/[^0-9]/g, '');
-      const screens = Number(row.scrnCnt) || 0;
-      return (!openDate || openDate <= today) && screens > 0;
+      return !openDate || openDate <= today;
     })
     .map((row, index) => toMovie(row, index + 1))
     .map(movie => {
+      // 전일 멀티체인 통계에서 확인된 체인만 버튼으로 연결합니다.
       const chains = multichain?.map?.get(normalizeMovieTitle(movie.title));
       movie.cinemas = chains ? CINEMA_NAMES.filter(name => chains.has(name)) : [];
       return movie;
@@ -161,7 +178,7 @@ export default {
     const assetResponse = await env.ASSETS.fetch(request);
     const contentType = assetResponse.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
-      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-22" defer></script>', { html: true }); } }).transform(assetResponse);
+      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-23" defer></script>', { html: true }); } }).transform(assetResponse);
     }
     return assetResponse;
   }
