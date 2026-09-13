@@ -3,9 +3,9 @@
 (() => {
   const genreOrder = ['전체','공포','코미디','스릴러','액션','드라마','멜로/로맨스','애니메이션','SF','판타지','범죄','미스터리','모험','전쟁','다큐멘터리'];
   const official = {
-    CGV: 'https://www.cgv.co.kr/',
-    롯데시네마: 'https://www.lottecinema.co.kr/',
-    메가박스: 'https://www.megabox.co.kr/'
+    CGV: 'https://www.cgv.co.kr/cnm/movieBook/movie',
+    롯데시네마: 'https://www.lottecinema.co.kr/NLCHS/Ticketing',
+    메가박스: 'https://www.megabox.co.kr/booking/timetable'
   };
   let movies = [];
   let activeGenre = '전체';
@@ -62,8 +62,7 @@
           <div class="title">${esc(movie.title)}</div>
           <div class="meta">${esc(movie.date || '개봉일 정보 없음')}${movie.rating ? ` · ${esc(movie.rating)}` : ''}${movie.runtime ? ` · ${esc(movie.runtime)}분` : ''}</div>
           <div class="genre-list">${(movie.genres || []).map(g => `<span class="genre">${esc(g)}</span>`).join('')}</div>
-          <div class="cinemas">${(movie.cinemas || []).map(c => `<span class="cinema">${esc(c)}</span>`).join('')}</div>
-          <div class="buttons">${(movie.cinemas || []).map(c => official[c] ? `<a class="btn" href="${official[c]}" target="_blank" rel="noopener">${esc(c)} 공식사이트</a>` : '').join('')}</div>
+          <div class="buttons">${(movie.cinemas || []).map(c => official[c] ? `<a class="btn cinema-btn" href="${official[c]}" target="_blank" rel="noopener">${esc(c)}</a>` : '').join('')}</div>
         </div>
       </article>`).join('');
   }
