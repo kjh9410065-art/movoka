@@ -1,5 +1,5 @@
 // MOVOKA 영화 화면
-// 평소에는 KV에 저장된 일일 데이터를 즉시 읽고, 최초 1회만 빈 KV를 채웁니다.
+// 평소에는 KV에 저장된 일일 데이터를 즉시 읽고, 영화 정보는 버튼을 눌렀을 때 가져옵니다.
 (() => {
   const genreOrder = ['전체','공포','코미디','스릴러','액션','드라마','멜로/로맨스','애니메이션','SF','판타지','범죄','미스터리','모험','전쟁','다큐멘터리'];
   const official = {
@@ -23,8 +23,7 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
   }[ch]));
 
-  // 영화 정보 버튼을 눌렀을 때 사용할 작은 정보 창입니다.
-  function openMovieInfo(movie) {
+  async function openMovieInfo(movie) {
     document.getElementById('movieInfoModal')?.remove();
     const modal = document.createElement('div');
     modal.id = 'movieInfoModal';
@@ -32,19 +31,35 @@
       <div class="movie-modal-backdrop" data-close="1">
         <div class="movie-modal" role="dialog" aria-modal="true" aria-label="영화 정보">
           <button class="movie-modal-close" type="button" aria-label="닫기">×</button>
-          ${movie.poster ? `<img class="movie-modal-poster" src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">` : ''}
-          <h3>${esc(movie.title)}</h3>
-          <p class="movie-modal-meta">${esc(movie.date || '개봉일 정보 없음')}${movie.rating ? ` · ${esc(movie.rating)}` : ''}${movie.runtime ? ` · ${esc(movie.runtime)}분` : ''}</p>
-          <div class="movie-modal-section"><strong>줄거리</strong><p>${esc(movie.plot || '줄거리 정보 준비 중입니다.')}</p></div>
-          ${movie.trailer ? `<div class="movie-modal-section"><strong>예고편</strong><div class="movie-trailer"><iframe src="${esc(movie.trailer)}" title="${esc(movie.title)} 예고편" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div></div>` : ''}
+          <div class="movie-modal-head">
+            ${movie.poster ? `<img class="movie-modal-poster" src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">` : ''}
+            <div><h3>${esc(movie.title)}</h3><p class="movie-modal-meta">${esc(movie.date || '개봉일 정보 없음')}${movie.rating ? ` · ${esc(movie.rating)}` : ''}${movie.runtime ? ` · ${esc(movie.runtime)}분` : ''}</p></div>
+          </div>
+          <div class="movie-modal-section"><strong>줄거리</strong><p class="movie-plot">불러오는 중...</p></div>
+          <div class="movie-modal-section"><strong>감독</strong><p class="movie-director">정보를 불러오는 중...</p></div>
+          <div class="movie-modal-section trailer-section" hidden><strong>예고편</strong><div class="movie-trailer"></div></div>
         </div>
       </div>`;
     document.body.appendChild(modal);
     const close = () => modal.remove();
     modal.querySelector('.movie-modal-close').addEventListener('click', close);
-    modal.querySelector('.movie-modal-backdrop').addEventListener('click', event => {
-      if (event.target.dataset.close) close();
-    });
+    modal.querySelector('.movie-modal-backdrop').addEventListener('click', event => { if (event.target.dataset.close) close(); });
+
+    try {
+      const response = await fetch(`/api/movie-info?movieCd=${encodeURIComponent(movie.id)}`, { headers: { Accept: 'application/json' } });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.message || '영화 정보를 불러오지 못했습니다.');
+      modal.querySelector('.movie-plot').textContent = data.plot || '등록된 줄거리 정보가 없습니다.';
+      modal.querySelector('.movie-director').textContent = data.director || '등록된 감독 정보가 없습니다.';
+      if (data.trailer) {
+        const section = modal.querySelector('.trailer-section');
+        section.hidden = false;
+        section.querySelector('.movie-trailer').innerHTML = `<iframe src="${esc(data.trailer)}" title="${esc(movie.title)} 예고편" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      }
+    } catch (error) {
+      modal.querySelector('.movie-plot').textContent = error.message || '영화 정보를 불러오지 못했습니다.';
+      modal.querySelector('.movie-director').textContent = '';
+    }
   }
 
   function renderTabs() {
@@ -52,36 +67,18 @@
       const exists = genre === '전체' || movies.some(movie => (movie.genres || []).includes(genre));
       return `<button class="tab ${genre === activeGenre ? 'active' : ''}" ${exists ? '' : 'disabled style="opacity:.45"'} data-genre="${esc(genre)}">${esc(genre)}</button>`;
     }).join('');
-    tabs.querySelectorAll('.tab:not([disabled])').forEach(button => {
-      button.addEventListener('click', () => {
-        activeGenre = button.dataset.genre;
-        renderTabs();
-        renderMovies();
-      });
-    });
+    tabs.querySelectorAll('.tab:not([disabled])').forEach(button => button.addEventListener('click', () => { activeGenre = button.dataset.genre; renderTabs(); renderMovies(); }));
   }
 
   function renderMovies() {
     const keyword = search.value.trim().toLowerCase();
-    const filtered = movies.filter(movie => {
-      const genreMatch = activeGenre === '전체' || (movie.genres || []).includes(activeGenre);
-      const searchMatch = !keyword || String(movie.title || '').toLowerCase().includes(keyword);
-      return genreMatch && searchMatch;
-    });
-
+    const filtered = movies.filter(movie => (activeGenre === '전체' || (movie.genres || []).includes(activeGenre)) && (!keyword || String(movie.title || '').toLowerCase().includes(keyword)));
     const heading = document.getElementById('sectionTitle');
     if (heading) heading.textContent = `🎬 ${activeGenre === '전체' ? '전체 영화' : activeGenre}`;
-
-    if (!filtered.length) {
-      list.innerHTML = '<div class="empty">현재 조건에 맞는 영화가 없습니다.</div>';
-      return;
-    }
-
+    if (!filtered.length) { list.innerHTML = '<div class="empty">현재 조건에 맞는 영화가 없습니다.</div>'; return; }
     list.innerHTML = filtered.map(movie => `
       <article class="card">
-        <div class="poster">
-          ${movie.poster ? `<img src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">` : '포스터 준비 중'}
-        </div>
+        <div class="poster">${movie.poster ? `<img src="${esc(movie.poster)}" alt="${esc(movie.title)} 포스터">` : '포스터 준비 중'}</div>
         <div class="info">
           <button class="movie-info-btn" type="button" data-movie-id="${esc(movie.id)}">영화 정보</button>
           <div class="title">${esc(movie.title)}</div>
@@ -91,13 +88,7 @@
           <div class="buttons">${(movie.cinemas || []).map(c => official[c] ? `<a class="btn cinema-btn" href="${official[c]}" target="_blank" rel="noopener">${esc(c)}</a>` : '').join('')}</div>
         </div>
       </article>`).join('');
-
-    list.querySelectorAll('.movie-info-btn').forEach(button => {
-      button.addEventListener('click', () => {
-        const movie = movies.find(item => String(item.id) === String(button.dataset.movieId));
-        if (movie) openMovieInfo(movie);
-      });
-    });
+    list.querySelectorAll('.movie-info-btn').forEach(button => button.addEventListener('click', () => { const movie = movies.find(item => String(item.id) === String(button.dataset.movieId)); if (movie) openMovieInfo(movie); }));
   }
 
   async function load() {
@@ -115,8 +106,7 @@
       if (!response.ok || !data.ok) throw new Error(data.message || '영화 데이터 연결 실패');
       movies = Array.isArray(data.movies) ? data.movies : [];
       if (updated) updated.textContent = `자료 기준일 ${data.basedAt.slice(0,4)}-${data.basedAt.slice(4,6)}-${data.basedAt.slice(6,8)} · ${movies.length}편`;
-      renderTabs();
-      renderMovies();
+      renderTabs(); renderMovies();
     } catch (error) {
       if (updated) updated.textContent = '영화 데이터 연결 실패';
       list.innerHTML = `<div class="error">영화 데이터를 불러오지 못했습니다.<br>${esc(error.message || '잠시 후 다시 시도해주세요.')}</div>`;
