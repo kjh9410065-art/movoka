@@ -3,6 +3,7 @@
 
 const KOFIC_BASE = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
 const KOBIS_WEB_BASE = 'https://www.kobis.or.kr';
+const MOVIE_CACHE_SECONDS = 600; // 같은 날에는 10분 동안 영화 데이터를 재사용합니다.
 
 const GENRE_MAP = {
   '공포(호러)': '공포', '호러': '공포', '코미디': '코미디', '스릴러': '스릴러',
@@ -11,12 +12,12 @@ const GENRE_MAP = {
   '전쟁': '전쟁', '다큐멘터리': '다큐멘터리'
 };
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store'
+      ...extraHeaders
     }
   });
 }
@@ -56,8 +57,7 @@ async function getKoficJson(url) {
 }
 
 async function getPosterMap(targetDt) {
-  // KOBIS 공식 일일 데이터에는 원본 파일 위치(fileSaveLoct + sysFileNm)와
-  // 작은 썸네일(thumbUrl)이 함께 있습니다. 원본 포스터를 우선 사용합니다.
+  // KOBIS 공식 일일 데이터에는 원본 파일 위치와 썸네일이 함께 있습니다.
   const url = new URL(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainDailyBoxOffice.do`);
   url.searchParams.set('startDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
   url.searchParams.set('endDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
@@ -67,7 +67,6 @@ async function getPosterMap(targetDt) {
   const rows = await response.json();
   const map = new Map();
 
-  // 원본 파일 경로를 사용하면 thumbUrl 확대보다 선명한 포스터를 표시할 수 있습니다.
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row?.movieCd) continue;
 
@@ -75,12 +74,9 @@ async function getPosterMap(targetDt) {
     if (row.fileSaveLoct && row.sysFileNm) {
       poster = new URL(`${row.fileSaveLoct}${row.sysFileNm}`, KOBIS_WEB_BASE).href;
     }
-
-    // 원본 정보가 없는 경우에만 공식 썸네일을 예비값으로 사용합니다.
     if (!poster && row.thumbUrl) {
       poster = new URL(row.thumbUrl, KOBIS_WEB_BASE).href;
     }
-
     if (poster) map.set(String(row.movieCd), poster);
   }
   return map;
@@ -97,26 +93,17 @@ async function getMovies(env) {
   boxofficeUrl.searchParams.set('key', key);
   boxofficeUrl.searchParams.set('targetDt', targetDt);
 
-  let boxofficeData;
-  try {
-    boxofficeData = await getKoficJson(boxofficeUrl);
-  } catch (error) {
-    console.error('MOVOKA KOBIS boxoffice error:', error);
-    throw error;
-  }
-
+  const boxofficeData = await getKoficJson(boxofficeUrl);
   const dailyList = boxofficeData?.boxOfficeResult?.dailyBoxOfficeList || [];
   const candidates = dailyList.slice(0, 20);
 
-  let posterMap = new Map();
-  try {
-    posterMap = await getPosterMap(targetDt);
-  } catch (error) {
-    // 포스터 조회 실패가 영화 목록 전체를 막지 않도록 합니다.
+  // 포스터와 영화 상세 조회는 서로 기다리지 않고 동시에 시작합니다.
+  const posterPromise = getPosterMap(targetDt).catch(error => {
     console.error('MOVOKA KOBIS poster error:', error);
-  }
+    return new Map();
+  });
 
-  const movies = await Promise.all(candidates.map(async item => {
+  const detailPromises = candidates.map(async item => {
     const detailUrl = new URL(`${KOFIC_BASE}/movie/searchMovieInfo.json`);
     detailUrl.searchParams.set('key', key);
     detailUrl.searchParams.set('movieCd', item.movieCd);
@@ -134,7 +121,7 @@ async function getMovies(env) {
         rank: Number(item.rank) || 999,
         audience: Number(item.audiAcc) || 0,
         screens: Number(item.scrnCnt) || 0,
-        poster: posterMap.get(String(movie.movieCd)) || '',
+        poster: '',
         // 실제 극장별 상영 여부가 확인되기 전까지는 임의의 극장명을 넣지 않습니다.
         cinemas: []
       };
@@ -143,19 +130,40 @@ async function getMovies(env) {
       console.error(`MOVOKA KOBIS movie detail error (${item.movieCd}):`, error);
       return null;
     }
-  }));
+  });
 
-  return json({ ok: true, source: 'KOFIC/KOBIS', basedAt: targetDt, movies: movies.filter(Boolean).sort((a,b) => a.rank-b.rank) });
+  // 상세 조회와 포스터 조회가 모두 끝난 뒤 한 번만 포스터를 연결합니다.
+  const [posterMap, detailMovies] = await Promise.all([posterPromise, Promise.all(detailPromises)]);
+  const movies = detailMovies.filter(Boolean).map(movie => ({
+    ...movie,
+    poster: posterMap.get(String(movie.id)) || ''
+  })).sort((a, b) => a.rank - b.rank);
+
+  return json({ ok: true, source: 'KOFIC/KOBIS', basedAt: targetDt, movies });
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
     if (url.pathname === '/api/movies') {
+      // 매번 KOFIC API 20회 이상을 호출하지 않고 10분간 결과를 재사용합니다.
+      // 첫 요청만 느리고 이후 방문/새로고침은 캐시에서 바로 응답합니다.
+      const cacheKey = new Request(`${url.origin}/__movoka_movie_cache/${getKoreaDateMinusOne()}`);
+      const cache = caches.default;
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+
       try {
-        return await getMovies(env);
+        const response = await getMovies(env);
+        if (response.ok) {
+          const cachedResponse = new Response(response.body, response);
+          cachedResponse.headers.set('cache-control', `public, max-age=0, s-maxage=${MOVIE_CACHE_SECONDS}`);
+          ctx.waitUntil(cache.put(cacheKey, cachedResponse.clone()));
+          return cachedResponse;
+        }
+        return response;
       } catch (error) {
-        // 배포 후 /api/movies에서 정확한 KOBIS 오류를 바로 확인할 수 있게 합니다.
         const detail = String(error?.message || 'unknown');
         return json({ ok: false, code: 'KOFIC_FETCH_ERROR', message: `영화 데이터를 가져오지 못했습니다. (${detail})` }, 502);
       }
@@ -167,7 +175,7 @@ export default {
       return new HTMLRewriter().on('body', {
         element(element) {
           // 정적 HTML 캐시 때문에 이전 화면이 남지 않도록 버전을 올립니다.
-          element.append('<script src="/movoka-live.js?v=20260913-4" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-5" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
