@@ -3,7 +3,7 @@
 
 const KOFIC_BASE = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
 const KOBIS_WEB_BASE = 'https://www.kobis.or.kr';
-const MOVIE_CACHE_SECONDS = 600; // 같은 날에는 10분 동안 영화 데이터를 재사용합니다.
+const MOVIE_CACHE_SECONDS = 86400; // 하루 동안 같은 날짜의 영화 데이터를 재사용해 API 호출을 최소화합니다.
 
 const GENRE_MAP = {
   '공포(호러)': '공포', '호러': '공포', '코미디': '코미디', '스릴러': '스릴러',
@@ -93,6 +93,7 @@ async function getMovies(env) {
   boxofficeUrl.searchParams.set('key', key);
   boxofficeUrl.searchParams.set('targetDt', targetDt);
 
+  // 이 요청은 하루 캐시의 최초 생성 시에만 실행됩니다.
   const boxofficeData = await getKoficJson(boxofficeUrl);
   const dailyList = boxofficeData?.boxOfficeResult?.dailyBoxOfficeList || [];
   const candidates = dailyList.slice(0, 20);
@@ -147,8 +148,8 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/movies') {
-      // 매번 KOFIC API 20회 이상을 호출하지 않고 10분간 결과를 재사용합니다.
-      // 첫 요청만 느리고 이후 방문/새로고침은 캐시에서 바로 응답합니다.
+      // KOFIC API 일일 한도(1,000회)를 아끼기 위해 날짜별 결과를 하루 동안 캐시합니다.
+      // 같은 날 방문자가 몇 명이든 캐시가 유지되는 동안에는 KOFIC API를 반복 호출하지 않습니다.
       const cacheKey = new Request(`${url.origin}/__movoka_movie_cache/${getKoreaDateMinusOne()}`);
       const cache = caches.default;
       const cached = await cache.match(cacheKey);
@@ -158,7 +159,8 @@ export default {
         const response = await getMovies(env);
         if (response.ok) {
           const cachedResponse = new Response(response.body, response);
-          cachedResponse.headers.set('cache-control', `public, max-age=0, s-maxage=${MOVIE_CACHE_SECONDS}`);
+          // 브라우저는 5분, Cloudflare 엣지 캐시는 하루 동안 재사용합니다.
+          cachedResponse.headers.set('cache-control', 'public, max-age=300, s-maxage=86400');
           ctx.waitUntil(cache.put(cacheKey, cachedResponse.clone()));
           return cachedResponse;
         }
@@ -175,7 +177,7 @@ export default {
       return new HTMLRewriter().on('body', {
         element(element) {
           // 정적 HTML 캐시 때문에 이전 화면이 남지 않도록 버전을 올립니다.
-          element.append('<script src="/movoka-live.js?v=20260913-5" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-6" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
