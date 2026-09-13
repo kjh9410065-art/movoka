@@ -1,5 +1,5 @@
 // MOVOKA Cloudflare Worker
-// 방문자는 저장된 일일 데이터를 즉시 받고, 데이터 갱신은 별도의 하루 1회 작업에서 담당합니다.
+// 영화 데이터는 KV에 저장하고, 영화관 링크만 별도로 보강해 페이지 로딩을 막지 않습니다.
 
 const KOFIC_BASE = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
 const KOBIS_WEB_BASE = 'https://www.kobis.or.kr';
@@ -11,12 +11,12 @@ const GENRE_MAP = {
   '전쟁': '전쟁', '다큐멘터리': '다큐멘터리'
 };
 
-// 영화관별 공식 예매/상영 페이지입니다.
-// 실제 상영작 제목이 페이지에서 확인된 경우에만 카드에 버튼을 노출합니다.
+// 영화관별 현재 영화 목록 페이지입니다.
+// 페이지 전체에서 영화 제목을 확인해 해당 체인에서 상영 중인 경우만 링크를 표시합니다.
 const CINEMA_SOURCES = {
-  CGV: 'https://cgv.co.kr/cnm/movieBook/movie',
-  롯데시네마: 'https://www.lottecinema.co.kr/NLCHS/Ticketing',
-  메가박스: 'https://www.megabox.co.kr/booking/timetable'
+  CGV: 'https://cgv.co.kr/cnm/movieBook',
+  롯데시네마: 'https://www.lottecinema.co.kr/NLCMW/ticketing?filter=movie',
+  메가박스: 'https://www.megabox.co.kr/movie'
 };
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -31,7 +31,7 @@ function normalizeGenres(genres = []) {
 }
 
 function normalizeTitle(value = '') {
-  // 영화관 페이지와 KOBIS 제목의 괄호/기호/공백 차이를 줄여 비교합니다.
+  // 괄호/기호/공백 차이를 제거해 KOBIS 제목과 영화관 제목을 비교합니다.
   return String(value)
     .toLowerCase()
     .replace(/\([^)]*\)/g, '')
@@ -39,9 +39,20 @@ function normalizeTitle(value = '') {
     .replace(/[^0-9a-z가-힣]/gi, '');
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
+  // 영화관 사이트가 응답하지 않아도 MOVOKA 전체 페이지가 기다리지 않도록 제한합니다.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchCinemaPage(url) {
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       redirect: 'follow',
       headers: {
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153 Safari/537.36',
@@ -57,7 +68,7 @@ async function fetchCinemaPage(url) {
 }
 
 async function getCinemaAvailability(movies) {
-  // 하루 데이터 수집 시 영화관 공식 페이지를 한 번씩만 확인합니다.
+  // 영화관 3곳은 동시에 확인해 전체 작업 시간을 줄입니다.
   const pages = await Promise.all(Object.entries(CINEMA_SOURCES).map(async ([name, url]) => {
     const html = await fetchCinemaPage(url);
     return [name, normalizeTitle(html)];
@@ -67,10 +78,7 @@ async function getCinemaAvailability(movies) {
   return movies.map(movie => {
     const title = normalizeTitle(movie.title);
     const cinemas = title
-      ? Object.keys(CINEMA_SOURCES).filter(name => {
-          const pageText = pageMap.get(name) || '';
-          return pageText.includes(title);
-        })
+      ? Object.keys(CINEMA_SOURCES).filter(name => (pageMap.get(name) || '').includes(title))
       : [];
     return { ...movie, cinemas };
   });
@@ -167,15 +175,25 @@ async function collectMovies(env) {
     poster: posterMap.get(String(movie.id)) || ''
   })).sort((a, b) => a.rank - b.rank);
 
-  // 영화관 공식 페이지에서 실제 상영작으로 확인된 체인만 저장합니다.
+  // 초기 데이터 생성 시 영화관 링크도 함께 확인합니다.
   const verifiedMovies = await getCinemaAvailability(movies);
-
   return {
     ok: true,
     source: 'KOFIC/KOBIS',
     basedAt: targetDt,
+    cinemaCheckedAt: new Date().toISOString(),
     movies: verifiedMovies
   };
+}
+
+async function refreshCinemaLinks(env) {
+  // 기존 KV 영화 데이터만 사용해 영화관 링크를 빠르게 갱신합니다. KOFIC API는 호출하지 않습니다.
+  const stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
+  if (!stored?.ok || !Array.isArray(stored.movies)) return null;
+  const movies = await getCinemaAvailability(stored.movies);
+  const data = { ...stored, cinemaCheckedAt: new Date().toISOString(), movies };
+  await env.MOVIE_DATA.put('latest', JSON.stringify(data));
+  return data;
 }
 
 export default {
@@ -183,18 +201,25 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/movies') {
-      // 정상 방문에서는 KOFIC API를 호출하지 않고 KV에 저장된 데이터만 읽습니다.
+      // 일반 방문에서는 저장된 영화 데이터만 즉시 반환합니다.
       const stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
       if (stored?.ok) return json(stored, 200, { 'cache-control': 'public, max-age=3600' });
       return json({ ok: false, code: 'MOVIE_DATA_NOT_READY', message: '오늘의 영화 데이터가 아직 준비되지 않았습니다.' }, 503);
     }
 
     if (url.pathname === '/internal/refresh-movies' && request.method === 'POST') {
-      // 첫 배포 후 KV가 비어 있을 때 한 번만 초기 데이터를 생성합니다.
+      // KV가 비어 있을 때 최초 영화 데이터를 생성합니다.
       const data = await collectMovies(env);
       if (!data.ok) return json(data, 503);
       await env.MOVIE_DATA.put('latest', JSON.stringify(data));
       return json({ ok: true, basedAt: data.basedAt, count: data.movies.length });
+    }
+
+    if (url.pathname === '/internal/refresh-cinema-links' && request.method === 'POST') {
+      // 기존 영화 데이터의 영화관 링크만 갱신합니다.
+      const data = await refreshCinemaLinks(env);
+      if (!data) return json({ ok: false, message: '영화 데이터가 없습니다.' }, 503);
+      return json({ ok: true, cinemaCheckedAt: data.cinemaCheckedAt });
     }
 
     const assetResponse = await env.ASSETS.fetch(request);
@@ -202,7 +227,7 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-9" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-10" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
@@ -210,7 +235,7 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    // Cloudflare Cron이 하루 한 번 실행하면 최신 영화 데이터를 저장합니다.
+    // Cloudflare Cron이 하루 한 번 최신 영화와 영화관 링크를 저장합니다.
     ctx.waitUntil((async () => {
       const data = await collectMovies(env);
       if (data.ok) await env.MOVIE_DATA.put('latest', JSON.stringify(data));
