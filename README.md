@@ -5,7 +5,7 @@
 ## 데이터 원칙
 
 - 공연 데이터의 기본 공급원은 **공연예술통합전산망(KOPIS) Open API**입니다.
-- KOPIS API 키는 `KOPIS_API_KEY` Cloudflare Secret으로만 관리합니다.
+- KOPIS API 키는 `KOPIS_API_KEY` Cloudflare **Secret**으로만 관리합니다.
 - 브라우저에 API 키를 노출하지 않습니다.
 - 공연목록과 공연상세를 KOPIS 공식 API에서 직접 조회합니다.
 - 비공식 공연정보 API, 무단 스크래핑, 임의 예매 URL은 사용하지 않습니다.
@@ -14,14 +14,26 @@
 
 ## 현재 구현
 
-- Cloudflare Workers + Static Assets 구조
-- KOPIS 공연목록 API 프록시
-- KOPIS 공연상세 API 프록시
-- 장르 필터 / 지역 필터 / 공연명 검색
+- Cloudflare Workers + Static Assets
+- KOPIS 공연목록 API 서버 프록시
+- KOPIS 공연상세 API 서버 프록시
+- 장르 필터
+- 지역 필터
+- 공연명·공연장 검색
 - 공연 포스터 / 기간 / 공연장
-- 공식 상세정보 연결
+- 공식 KOPIS 상세정보
 - 다크모드
+- 반응형 모바일 화면
 - API 키 브라우저 비노출
+- Wrangler 버전 고정으로 Workers Builds 재현성 확보
+
+## Cloudflare 설정
+
+Worker의 **Settings → Variables and Secrets**에서 다음 값을 Secret으로 등록합니다.
+
+`KOPIS_API_KEY`
+
+배포 명령은 `npx wrangler deploy`이며, 프로젝트의 `package.json`에서 Wrangler 버전을 고정합니다.
 
 ## 공식 데이터 확장 계획
 
@@ -36,9 +48,3 @@
 9. 국공립 문화기관 공식 Open API
 
 각 공급원은 API 제공 여부와 이용조건을 확인한 뒤 연결합니다. HTML 무단 수집은 사용하지 않습니다.
-
-## Cloudflare Secret
-
-`KOPIS_API_KEY`를 Worker의 **Variables and Secrets → Secret**으로 등록합니다.
-
-`wrangler.jsonc`에도 필수 Secret으로 선언되어 있어 누락을 방지합니다.
