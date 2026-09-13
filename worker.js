@@ -18,7 +18,7 @@ export default {
       const endDate = url.searchParams.get('eddate') || ymd(endDateObj);
       const page = Math.max(1, Number(url.searchParams.get('cpage') || 1));
       const ticketable = url.searchParams.get('ticketable') === '1';
-      // 예매 가능 여부를 상세정보의 공식 예매처 목록으로 확인하므로 한 번에 너무 많은 상세 요청을 만들지 않습니다.
+      // 예매 가능 여부를 상세정보의 공식 예매처 목록으로 확인하므로 조회량을 제한합니다.
       const requestedRows = Math.min(100, Math.max(1, Number(url.searchParams.get('rows') || 100)));
       const rows = ticketable ? Math.min(30, requestedRows) : requestedRows;
       const genre = url.searchParams.get('shcate') || '';
@@ -39,7 +39,7 @@ export default {
 
       if (!ticketable) return proxyKopis(api);
 
-      // 목록에 포함된 각 공연의 상세정보에서 KOPIS가 제공하는 공식 예매처(relates)를 확인합니다.
+      // 목록의 각 공연 상세정보에서 KOPIS 공식 예매처 URL이 등록된 작품만 남깁니다.
       try {
         const response = await fetch(api.toString());
         const body = await response.text();
@@ -54,7 +54,7 @@ export default {
           try {
             const detailResponse = await fetch(detailUrl.toString());
             const detail = await detailResponse.text();
-            // 공식 예매처 URL이 실제로 등록된 공연만 노출합니다.
+            // KOPIS가 제공하는 공식 예매처 URL이 실제로 등록된 경우에만 노출합니다.
             const hasTicketUrl = /<relates>[\s\S]*?<relate>[\s\S]*?<relateurl>https?:\/\//i.test(detail);
             return hasTicketUrl ? block : null;
           } catch {
@@ -84,10 +84,11 @@ export default {
       return proxyKopis(api);
     }
 
-    // 화면은 기존 정적 자산을 사용하되, 예매 UX 문구와 예매 가능 필터를 최신 정책으로 맞춥니다.
+    // 정적 페이지의 버튼/안내 문구도 항상 최신 문구로 고정합니다.
     if (url.pathname === '/' || url.pathname === '/index.html') {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
+      html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)[^<]*(<\/button>)/gi, '$1예매처 바로가기$2');
       html = html.replace(/>예매<\/button>/g, '>예매처 바로가기</button>');
       html = html.replace("new URLSearchParams({rows:'100'})", "new URLSearchParams({rows:'30',ticketable:'1'})");
       html = html.replace(
