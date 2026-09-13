@@ -1,9 +1,8 @@
 // MOVOKA Cloudflare Worker
-// 정적 HTML은 ASSETS에서 제공하고 /api/movies는 Worker에서 KOFIC(KOBIS) API를 호출합니다.
+// 방문자는 저장된 일일 데이터를 즉시 받고, 데이터 갱신은 별도의 하루 1회 작업에서 담당합니다.
 
 const KOFIC_BASE = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
 const KOBIS_WEB_BASE = 'https://www.kobis.or.kr';
-const MOVIE_CACHE_SECONDS = 86400; // 하루 동안 같은 날짜의 영화 데이터를 재사용해 API 호출을 최소화합니다.
 
 const GENRE_MAP = {
   '공포(호러)': '공포', '호러': '공포', '코미디': '코미디', '스릴러': '스릴러',
@@ -15,20 +14,15 @@ const GENRE_MAP = {
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      ...extraHeaders
-    }
+    headers: { 'content-type': 'application/json; charset=utf-8', ...extraHeaders }
   });
 }
 
 function normalizeGenres(genres = []) {
-  // KOFIC의 장르명을 MOVOKA 장르명으로 통일합니다.
   return [...new Set(genres.map(item => GENRE_MAP[item.genreNm] || item.genreNm).filter(Boolean))];
 }
 
 function getKoreaDateMinusOne() {
-  // 서버가 어느 지역에서 실행되더라도 한국 날짜 기준으로 전일을 계산합니다.
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
   }).formatToParts(new Date());
@@ -39,15 +33,10 @@ function getKoreaDateMinusOne() {
 }
 
 async function getKoficJson(url) {
-  // KOBIS 응답을 JSON으로 읽고 API 자체의 오류 응답도 구분합니다.
   const response = await fetch(url, { redirect: 'follow' });
   const text = await response.text();
   let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`KOBIS_NON_JSON_HTTP_${response.status}`);
-  }
+  try { data = JSON.parse(text); } catch { throw new Error(`KOBIS_NON_JSON_HTTP_${response.status}`); }
   if (!response.ok) throw new Error(`KOBIS_HTTP_${response.status}`);
   if (data?.faultResult) {
     const fault = data.faultResult;
@@ -57,50 +46,37 @@ async function getKoficJson(url) {
 }
 
 async function getPosterMap(targetDt) {
-  // KOBIS 공식 일일 데이터에는 원본 파일 위치와 썸네일이 함께 있습니다.
   const url = new URL(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainDailyBoxOffice.do`);
   url.searchParams.set('startDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
   url.searchParams.set('endDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
-
   const response = await fetch(url, { redirect: 'follow' });
   if (!response.ok) throw new Error(`KOBIS_POSTER_PAGE_HTTP_${response.status}`);
   const rows = await response.json();
   const map = new Map();
-
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row?.movieCd) continue;
-
     let poster = '';
-    if (row.fileSaveLoct && row.sysFileNm) {
-      poster = new URL(`${row.fileSaveLoct}${row.sysFileNm}`, KOBIS_WEB_BASE).href;
-    }
-    if (!poster && row.thumbUrl) {
-      poster = new URL(row.thumbUrl, KOBIS_WEB_BASE).href;
-    }
+    if (row.fileSaveLoct && row.sysFileNm) poster = new URL(`${row.fileSaveLoct}${row.sysFileNm}`, KOBIS_WEB_BASE).href;
+    if (!poster && row.thumbUrl) poster = new URL(row.thumbUrl, KOBIS_WEB_BASE).href;
     if (poster) map.set(String(row.movieCd), poster);
   }
   return map;
 }
 
-async function getMovies(env) {
+async function collectMovies(env) {
+  // 하루 1회 실행되어 KOFIC API에서 최신 데이터를 수집합니다.
   const key = env.KOBIS_API_KEY;
-  if (!key) {
-    return json({ ok: false, code: 'KOBIS_API_KEY_MISSING', message: 'KOBIS_API_KEY 환경변수가 설정되지 않았습니다.' }, 503);
-  }
+  if (!key) return { ok: false, code: 'KOBIS_API_KEY_MISSING', message: 'KOBIS_API_KEY 환경변수가 설정되지 않았습니다.' };
 
   const targetDt = getKoreaDateMinusOne();
   const boxofficeUrl = new URL(`${KOFIC_BASE}/boxoffice/searchDailyBoxOfficeList.json`);
   boxofficeUrl.searchParams.set('key', key);
   boxofficeUrl.searchParams.set('targetDt', targetDt);
-
-  // 이 요청은 하루 캐시의 최초 생성 시에만 실행됩니다.
   const boxofficeData = await getKoficJson(boxofficeUrl);
-  const dailyList = boxofficeData?.boxOfficeResult?.dailyBoxOfficeList || [];
-  const candidates = dailyList.slice(0, 20);
+  const candidates = (boxofficeData?.boxOfficeResult?.dailyBoxOfficeList || []).slice(0, 20);
 
-  // 포스터와 영화 상세 조회는 서로 기다리지 않고 동시에 시작합니다.
   const posterPromise = getPosterMap(targetDt).catch(error => {
-    console.error('MOVOKA KOBIS poster error:', error);
+    console.error('MOVOKA poster error:', error);
     return new Map();
   });
 
@@ -123,52 +99,44 @@ async function getMovies(env) {
         audience: Number(item.audiAcc) || 0,
         screens: Number(item.scrnCnt) || 0,
         poster: '',
-        // 실제 극장별 상영 여부가 확인되기 전까지는 임의의 극장명을 넣지 않습니다.
+        // 실제 극장별 상영 여부가 확인되기 전까지 임의의 극장명을 넣지 않습니다.
         cinemas: []
       };
     } catch (error) {
-      // 개별 영화 상세 조회 실패는 전체 목록을 막지 않도록 해당 영화만 제외합니다.
-      console.error(`MOVOKA KOBIS movie detail error (${item.movieCd}):`, error);
+      console.error(`MOVOKA movie detail error (${item.movieCd}):`, error);
       return null;
     }
   });
 
-  // 상세 조회와 포스터 조회가 모두 끝난 뒤 한 번만 포스터를 연결합니다.
   const [posterMap, detailMovies] = await Promise.all([posterPromise, Promise.all(detailPromises)]);
-  const movies = detailMovies.filter(Boolean).map(movie => ({
-    ...movie,
-    poster: posterMap.get(String(movie.id)) || ''
-  })).sort((a, b) => a.rank - b.rank);
-
-  return json({ ok: true, source: 'KOFIC/KOBIS', basedAt: targetDt, movies });
+  return {
+    ok: true,
+    source: 'KOFIC/KOBIS',
+    basedAt: targetDt,
+    movies: detailMovies.filter(Boolean).map(movie => ({
+      ...movie,
+      poster: posterMap.get(String(movie.id)) || ''
+    })).sort((a, b) => a.rank - b.rank)
+  };
 }
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     if (url.pathname === '/api/movies') {
-      // KOFIC API 일일 한도(1,000회)를 아끼기 위해 날짜별 결과를 하루 동안 캐시합니다.
-      // 같은 날 방문자가 몇 명이든 캐시가 유지되는 동안에는 KOFIC API를 반복 호출하지 않습니다.
-      const cacheKey = new Request(`${url.origin}/__movoka_movie_cache/${getKoreaDateMinusOne()}`);
-      const cache = caches.default;
-      const cached = await cache.match(cacheKey);
-      if (cached) return cached;
+      // 홈페이지에서는 KOFIC API를 호출하지 않고 저장된 데이터만 읽습니다.
+      const stored = await env.MOVIE_DATA.get('latest', { type: 'json' });
+      if (stored?.ok) return json(stored, 200, { 'cache-control': 'public, max-age=3600' });
+      return json({ ok: false, code: 'MOVIE_DATA_NOT_READY', message: '오늘의 영화 데이터가 아직 준비되지 않았습니다.' }, 503);
+    }
 
-      try {
-        const response = await getMovies(env);
-        if (response.ok) {
-          const cachedResponse = new Response(response.body, response);
-          // 브라우저는 5분, Cloudflare 엣지 캐시는 하루 동안 재사용합니다.
-          cachedResponse.headers.set('cache-control', 'public, max-age=300, s-maxage=86400');
-          ctx.waitUntil(cache.put(cacheKey, cachedResponse.clone()));
-          return cachedResponse;
-        }
-        return response;
-      } catch (error) {
-        const detail = String(error?.message || 'unknown');
-        return json({ ok: false, code: 'KOFIC_FETCH_ERROR', message: `영화 데이터를 가져오지 못했습니다. (${detail})` }, 502);
-      }
+    // 초기 데이터 생성이나 수동 갱신이 필요할 때 사용할 내부 경로입니다.
+    if (url.pathname === '/internal/refresh-movies') {
+      const data = await collectMovies(env);
+      if (!data.ok) return json(data, 503);
+      await env.MOVIE_DATA.put('latest', JSON.stringify(data));
+      return json({ ok: true, basedAt: data.basedAt, count: data.movies.length });
     }
 
     const assetResponse = await env.ASSETS.fetch(request);
@@ -176,11 +144,18 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          // 정적 HTML 캐시 때문에 이전 화면이 남지 않도록 버전을 올립니다.
-          element.append('<script src="/movoka-live.js?v=20260913-6" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-7" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
     return assetResponse;
+  },
+
+  async scheduled(event, env, ctx) {
+    // Cloudflare Cron이 하루 한 번 실행하면 최신 영화 데이터를 저장합니다.
+    ctx.waitUntil((async () => {
+      const data = await collectMovies(env);
+      if (data.ok) await env.MOVIE_DATA.put('latest', JSON.stringify(data));
+    })());
   }
 };
