@@ -1,82 +1,42 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="현재 개봉 영화와 상영 영화관 정보를 한눈에 확인하는 MOVOKA">
-  <title>MOVOKA | 오늘 뭐 볼까?</title>
-  <style>
-    *{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans KR",sans-serif;background:#f6f7fb;color:#17181c}a{text-decoration:none;color:inherit}.wrap{max-width:1100px;margin:auto;padding:0 20px}.header{background:#fff;border-bottom:1px solid #e8e9ee;position:sticky;top:0;z-index:10}.nav{height:70px;display:flex;align-items:center;justify-content:space-between}.logo{font-size:25px;font-weight:900;letter-spacing:-1px}.logo span{font-weight:500}.hero{padding:55px 0 35px}.hero h1{font-size:40px;margin:0 0 12px;letter-spacing:-2px}.hero p{margin:0;color:#666;font-size:17px}.section{padding:25px 0 55px}.section-title{display:flex;align-items:end;justify-content:space-between;margin-bottom:18px}.section-title h2{margin:0;font-size:25px}.updated{font-size:13px;color:#888}.categories{display:flex;gap:8px;overflow-x:auto;padding:2px 0 16px;margin-bottom:5px;scrollbar-width:none}.categories::-webkit-scrollbar{display:none}.category{flex:0 0 auto;border:1px solid #dfe1e7;background:#fff;color:#555;border-radius:999px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer;transition:.15s}.category:hover{background:#f3f4f6}.category.active{background:#17181c;color:#fff;border-color:#17181c}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.card{background:#fff;border:1px solid #e6e7ec;border-radius:16px;overflow:hidden;box-shadow:0 3px 12px #00000008}.poster{height:310px;background:linear-gradient(135deg,#ddd,#f3f3f3);display:flex;align-items:center;justify-content:center;color:#999;font-size:14px}.info{padding:17px}.title{font-size:19px;font-weight:800;margin-bottom:8px}.meta{font-size:13px;color:#777;margin-bottom:14px}.cinemas{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.cinema{font-size:12px;font-weight:700;padding:6px 9px;border-radius:8px;background:#f1f2f5}.buttons{display:flex;gap:7px}.btn{flex:1;text-align:center;border:1px solid #ddd;border-radius:9px;padding:9px 5px;font-size:12px;font-weight:700;background:#fff}.btn:hover{background:#f3f4f6}.empty{grid-column:1/-1;background:#fff;border:1px solid #e6e7ec;border-radius:16px;padding:45px 20px;text-align:center;color:#888}.notice{font-size:13px;color:#888;margin-top:18px;line-height:1.6}.footer{border-top:1px solid #e5e6eb;background:#fff;padding:25px 0;color:#888;font-size:12px}.footer-links{margin-top:10px;display:flex;gap:14px;flex-wrap:wrap}.footer-links a{text-decoration:underline;color:#666}.legal{display:none;max-width:900px;margin:30px auto;padding:25px;background:#fff;border:1px solid #e5e6eb;border-radius:14px;line-height:1.75;font-size:14px}.legal h2{font-size:24px;margin-top:0}.legal h3{font-size:17px;margin-bottom:5px}.legal p{margin:5px 0 16px}@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.poster{height:250px}.hero h1{font-size:32px}}@media(max-width:480px){.wrap{padding:0 14px}.nav{height:62px}.hero{padding:40px 0 25px}.hero h1{font-size:28px}.grid{gap:12px}.poster{height:210px}.info{padding:13px}.title{font-size:16px}.category{padding:8px 13px}}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="MOVOKA에서 현재 개봉 영화와 장르별 영화 정보를 한눈에 확인하세요. 공포, 코미디, 스릴러, 액션 등으로 영화를 빠르게 찾아볼 수 있습니다.">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MOVOKA | 오늘 뭐 볼까?">
+<meta property="og:description" content="현재 개봉 영화와 장르별 영화 정보를 한눈에 확인하세요.">
+<title>MOVOKA | 오늘 뭐 볼까?</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans KR",sans-serif;background:#f6f7fb;color:#17181c}a{text-decoration:none;color:inherit}.wrap{max-width:1120px;margin:auto;padding:0 20px}.header{background:#fff;border-bottom:1px solid #e8e9ee;position:sticky;top:0;z-index:20}.nav{height:70px;display:flex;align-items:center;justify-content:space-between}.logo{font-size:25px;font-weight:900;letter-spacing:-1px}.logo span{font-weight:500}.hero{padding:52px 0 28px}.hero h1{font-size:40px;line-height:1.18;margin:0 0 12px;letter-spacing:-2px}.hero p{margin:0;color:#666;font-size:17px}.toolbar{display:flex;gap:10px;margin:25px 0 16px}.search{flex:1;min-width:0;border:1px solid #ddd;border-radius:12px;padding:13px 15px;font-size:14px;background:#fff;outline:none}.tabs{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tab{border:1px solid #ddd;background:#fff;border-radius:999px;padding:9px 15px;font-size:13px;font-weight:700;white-space:nowrap;cursor:pointer}.tab.active{background:#17181c;color:#fff;border-color:#17181c}.section{padding:10px 0 55px}.section-title{display:flex;align-items:end;justify-content:space-between;margin:8px 0 18px}.section-title h2{margin:0;font-size:25px}.updated{font-size:13px;color:#888}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.card{background:#fff;border:1px solid #e6e7ec;border-radius:16px;overflow:hidden;box-shadow:0 3px 12px #00000008}.poster{height:310px;background:linear-gradient(135deg,#ddd,#f3f3f3);display:flex;align-items:center;justify-content:center;color:#999;font-size:14px}.info{padding:17px}.title{font-size:19px;font-weight:800;margin-bottom:8px}.meta{font-size:13px;color:#777;margin-bottom:12px}.genre-list{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:13px}.genre{font-size:11px;font-weight:700;padding:5px 8px;border-radius:7px;background:#f1f2f5}.cinemas{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.cinema{font-size:12px;font-weight:700;padding:6px 9px;border-radius:8px;background:#f1f2f5}.buttons{display:flex;gap:7px}.btn{flex:1;text-align:center;border:1px solid #ddd;border-radius:9px;padding:9px 5px;font-size:12px;font-weight:700;background:#fff}.btn:hover{background:#f3f4f6}.empty{grid-column:1/-1;text-align:center;padding:55px 20px;background:#fff;border:1px solid #e6e7ec;border-radius:16px;color:#888}.notice{font-size:13px;color:#888;margin-top:18px;line-height:1.6}.footer{border-top:1px solid #e5e6eb;background:#fff;padding:25px 0;color:#888;font-size:12px}.footer-links{margin-top:10px;display:flex;gap:14px;flex-wrap:wrap}.footer-links a{text-decoration:underline;color:#666}.legal{display:none;max-width:900px;margin:30px auto;padding:25px;background:#fff;border:1px solid #e5e6eb;border-radius:14px;line-height:1.75;font-size:14px}.legal h2{font-size:24px;margin-top:0}.legal h3{font-size:17px;margin-bottom:5px}.legal p{margin:5px 0 16px}@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.poster{height:250px}.hero h1{font-size:32px}}@media(max-width:480px){.wrap{padding:0 14px}.nav{height:62px}.hero{padding:40px 0 25px}.hero h1{font-size:28px}.grid{gap:12px}.poster{height:210px}.info{padding:13px}.title{font-size:16px}.toolbar{margin-top:18px}}
+</style>
 </head>
 <body>
 <header class="header"><div class="wrap nav"><a class="logo" href="/">MOVOKA<span>.</span></a><span style="font-size:13px;color:#888">오늘 뭐 볼까?</span></div></header>
 <main class="wrap">
-  <section class="hero"><h1>지금 볼 영화,<br>한눈에 찾아보세요.</h1><p>현재 개봉작과 상영 영화관 정보를 모아 보여드립니다.</p></section>
-  <section class="section">
-    <div class="section-title"><h2>🎬 영화</h2><span class="updated">장르별 보기</span></div>
-
-    <!-- 전체 영화와 주요 장르를 빠르게 필터링할 수 있는 탭입니다. -->
-    <div id="categories" class="categories" aria-label="영화 장르 카테고리"></div>
-    <div id="movies" class="grid"></div>
-    <div class="notice">※ 장르는 영화 데이터에 제공되는 정보를 기준으로 분류합니다. 영화관별 상영 여부와 일정은 변경될 수 있으니 예매 및 자세한 정보는 각 영화관 공식 사이트에서 확인하세요.</div>
-  </section>
-
-  <section id="terms" class="legal"><h2>이용약관</h2><p>최종 수정일: 2026년 9월 13일</p><h3>제1조 목적</h3><p>MOVOKA는 현재 개봉 영화와 영화관 정보를 편리하게 확인할 수 있도록 정보를 제공하는 서비스입니다.</p><h3>제2조 정보의 성격</h3><p>영화 제목, 개봉일, 장르, 상영 여부 등은 외부 자료를 바탕으로 제공될 수 있으며 실제 영화관의 상영 일정과 다를 수 있습니다. 예매 가능 여부와 가격 등은 각 영화관의 공식 사이트에서 확인해 주세요.</p><h3>제3조 외부 사이트</h3><p>MOVOKA는 CGV, 롯데시네마, 메가박스 등 외부 사이트로 연결될 수 있습니다. 외부 사이트의 서비스, 콘텐츠, 개인정보 처리 등에 대해서는 해당 사업자의 정책이 적용됩니다.</p><h3>제4조 서비스 변경</h3><p>서비스의 내용, 제공 방식 및 외부 연결 정보는 운영상 필요한 경우 변경될 수 있습니다.</p><h3>제5조 문의</h3><p>서비스 관련 문의: kjh9410065@gmail.com</p></section>
-
-  <section id="privacy" class="legal"><h2>개인정보처리방침</h2><p>최종 수정일: 2026년 9월 13일</p><h3>1. 개인정보의 처리 목적</h3><p>MOVOKA는 현재 별도의 회원가입이나 개인정보 입력 기능을 제공하지 않습니다. 문의가 이메일로 접수되는 경우 문의에 대한 답변 및 처리를 위해 이메일 주소와 문의 내용을 이용할 수 있습니다.</p><h3>2. 처리하는 개인정보 항목</h3><p>이메일 문의 시 이용자가 직접 제공한 이메일 주소 및 문의 내용이 처리될 수 있습니다.</p><h3>3. 보유 및 이용기간</h3><p>문의 처리에 필요한 기간 동안 보관하며, 관련 법령에 따라 보존이 필요한 경우 해당 기간 동안 보관합니다. 그 외에는 처리 목적 달성 후 지체 없이 파기합니다.</p><h3>4. 제3자 제공</h3><p>MOVOKA는 문의 처리 목적 외에 이용자의 개인정보를 제3자에게 제공하지 않습니다. 법령에 따른 경우에는 예외로 합니다.</p><h3>5. 개인정보 처리의 위탁</h3><p>현재 사이트 자체에서 별도의 개인정보 처리 위탁을 운영하지 않습니다. 외부 서비스 이용에 따라 개인정보 처리가 발생하는 경우 해당 서비스의 정책을 확인하시기 바랍니다.</p><h3>6. 정보주체의 권리</h3><p>개인정보에 관한 문의 및 처리 관련 요청은 아래 이메일로 접수할 수 있습니다.</p><h3>7. 개인정보 보호책임자 및 문의처</h3><p>담당자: MOVOKA 운영자<br>이메일: kjh9410065@gmail.com</p><h3>8. 방침의 변경</h3><p>관련 법령 또는 서비스 변경에 따라 본 방침이 변경될 수 있으며, 변경 시 본 페이지에 최신 내용을 공개합니다.</p></section>
+<section class="hero"><h1>지금 볼 영화,<br>한눈에 찾아보세요.</h1><p>현재 개봉작을 장르별로 빠르게 찾아볼 수 있습니다.</p></section>
+<section aria-label="영화 검색 및 장르 필터"><div class="toolbar"><input id="search" class="search" type="search" placeholder="영화 제목을 검색하세요" aria-label="영화 제목 검색"></div><div id="tabs" class="tabs"></div></section>
+<section class="section"><div class="section-title"><h2 id="sectionTitle">🎬 전체 영화</h2><span id="updated" class="updated">자료 기준일 준비 중</span></div><div id="movies" class="grid"></div><div class="notice">※ 영화 장르는 영화진흥위원회(KOBIS) 등 영화 정보 자료의 장르 분류를 기준으로 표시할 예정입니다. 실제 상영 여부와 일정은 영화관 공식 사이트에서 확인하세요.</div></section>
+<section id="terms" class="legal"><h2>이용약관</h2><p>최종 수정일: 2026년 9월 13일</p><h3>제1조 목적</h3><p>MOVOKA는 영화와 영화관 정보를 편리하게 확인할 수 있도록 정보를 제공하는 서비스입니다.</p><h3>제2조 정보의 성격</h3><p>영화 제목, 장르, 개봉일, 상영 여부 등은 외부 자료를 바탕으로 제공될 수 있으며 실제 영화관 정보와 다를 수 있습니다. 예매 가능 여부와 가격 등은 각 영화관 공식 사이트에서 확인해 주세요.</p><h3>제3조 외부 사이트</h3><p>MOVOKA는 CGV, 롯데시네마, 메가박스 등 외부 사이트로 연결될 수 있으며 외부 사이트에는 해당 사업자의 정책이 적용됩니다.</p><h3>제4조 서비스 변경</h3><p>서비스 내용과 제공 방식은 운영상 필요한 경우 변경될 수 있습니다.</p><h3>제5조 문의</h3><p>서비스 관련 문의: kjh9410065@gmail.com</p></section>
+<section id="privacy" class="legal"><h2>개인정보처리방침</h2><p>최종 수정일: 2026년 9월 13일</p><h3>1. 개인정보의 처리 목적</h3><p>MOVOKA는 현재 별도의 회원가입이나 개인정보 입력 기능을 제공하지 않습니다. 이메일 문의가 접수되는 경우 답변과 처리를 위해 이메일 주소와 문의 내용을 이용할 수 있습니다.</p><h3>2. 처리하는 개인정보 항목</h3><p>이메일 문의 시 이용자가 직접 제공한 이메일 주소 및 문의 내용이 처리될 수 있습니다.</p><h3>3. 보유 및 이용기간</h3><p>문의 처리에 필요한 기간 동안 보관하며 관련 법령에 따라 보존이 필요한 경우 해당 기간 동안 보관합니다. 그 외에는 목적 달성 후 지체 없이 파기합니다.</p><h3>4. 제3자 제공</h3><p>MOVOKA는 문의 처리 목적 외에 이용자의 개인정보를 제3자에게 제공하지 않습니다. 법령에 따른 경우는 예외로 합니다.</p><h3>5. 개인정보 처리의 위탁</h3><p>현재 사이트 자체에서 별도의 개인정보 처리 위탁을 운영하지 않습니다. 향후 외부 서비스 이용으로 개인정보 처리가 발생하는 경우 관련 내용을 반영합니다.</p><h3>6. 문의처</h3><p>MOVOKA 운영자<br>이메일: kjh9410065@gmail.com</p></section>
 </main>
 <footer class="footer"><div class="wrap">MOVOKA · 영화 정보를 한곳에서<div class="footer-links"><a href="#terms" onclick="showLegal('terms');return false;">이용약관</a><a href="#privacy" onclick="showLegal('privacy');return false;">개인정보처리방침</a><a href="mailto:kjh9410065@gmail.com">문의</a></div></div></footer>
 <script>
-  // 실제 영화 데이터 연동 전까지 화면 구조를 확인할 수 있도록 샘플 데이터를 사용합니다.
-  // 실제 데이터가 들어오면 genre 값에 따라 카테고리와 필터가 자동으로 구성됩니다.
-  const movies=[{title:'현재 개봉작 준비 중',date:'데이터 연동 예정',genre:'영화 정보',cinemas:['CGV','롯데시네마','메가박스']}];
-  const official={CGV:'https://www.cgv.co.kr/',롯데시네마:'https://www.lottecinema.co.kr/',메가박스:'https://www.megabox.co.kr/'};
-  const categoriesEl=document.getElementById('categories');
-  const moviesEl=document.getElementById('movies');
-  let selectedCategory='전체';
-
-  // 영화 데이터에서 장르명을 읽어 실제 존재하는 장르만 탭으로 만듭니다.
-  // 여러 장르가 하나의 문자열로 들어오는 경우에도 최대한 나눠서 처리합니다.
-  function getGenres(movie){
-    if(!movie.genre)return [];
-    return String(movie.genre).split(/[,/|·]+/).map(g=>g.trim()).filter(Boolean);
-  }
-
-  // 데이터에 자주 사용되는 장르를 우선 노출하고, 그 외 장르는 뒤에 추가합니다.
-  const preferredGenres=['공포','코믹','코미디','스릴러','액션','드라마','로맨스','애니메이션','SF','판타지','범죄','미스터리','모험','전쟁','다큐멘터리'];
-
-  function buildCategories(){
-    const available=[...new Set(movies.flatMap(getGenres))];
-    const ordered=preferredGenres.filter(g=>available.includes(g));
-    const others=available.filter(g=>!preferredGenres.includes(g));
-    const all=['전체',...ordered,...others];
-    // 영화 데이터가 아직 샘플 상태여도 전체 탭은 항상 표시합니다.
-    categoriesEl.innerHTML=all.map(category=>`<button class="category ${category===selectedCategory?'active':''}" data-category="${category}">${category}</button>`).join('');
-    categoriesEl.querySelectorAll('.category').forEach(button=>button.addEventListener('click',()=>{
-      selectedCategory=button.dataset.category;
-      buildCategories();
-      renderMovies();
-    }));
-  }
-
-  function renderMovies(){
-    const filtered=selectedCategory==='전체' ? movies : movies.filter(movie=>getGenres(movie).includes(selectedCategory));
-    if(!filtered.length){
-      moviesEl.innerHTML='<div class="empty">해당 장르의 영화가 없습니다.</div>';
-      return;
-    }
-    moviesEl.innerHTML=filtered.map(movie=>`<article class="card"><div class="poster">포스터</div><div class="info"><div class="title">${movie.title}</div><div class="meta">${movie.date} · ${movie.genre}</div><div class="cinemas">${movie.cinemas.map(c=>`<span class="cinema">${c}</span>`).join('')}</div><div class="buttons">${movie.cinemas.map(c=>`<a class="btn" href="${official[c]}" target="_blank" rel="noopener">${c} 공식사이트</a>`).join('')}</div></div></article>`).join('');
-  }
-
-  // 장르 탭과 영화 목록을 처음 화면에 표시합니다.
-  buildCategories();
-  renderMovies();
-
-  // 푸터의 법적 문서를 클릭하면 해당 문서만 펼쳐서 보여줍니다.
-  function showLegal(id){document.querySelectorAll('.legal').forEach(el=>el.style.display='none');const target=document.getElementById(id);if(target){target.style.display='block';target.scrollIntoView({behavior:'smooth'});}}
-  // 주소의 #terms / #privacy로 직접 들어온 경우에도 문서를 표시합니다.
-  if(location.hash==='#terms'||location.hash==='#privacy')showLegal(location.hash.substring(1));
+// 장르 탭은 실제 영화 데이터의 장르값을 기준으로 필터링하도록 구성합니다.
+const genreOrder=['전체','공포','코미디','스릴러','액션','드라마','멜로/로맨스','애니메이션','SF','판타지','범죄','미스터리','모험','전쟁','다큐멘터리'];
+// 실제 KOBIS 데이터 연동 전에는 빈 배열로 두어 가짜 영화 정보를 노출하지 않습니다.
+const movies=[];
+const official={CGV:'https://www.cgv.co.kr/',롯데시네마:'https://www.lottecinema.co.kr/',메가박스:'https://www.megabox.co.kr/'};
+let activeGenre='전체';
+const tabs=document.getElementById('tabs'),list=document.getElementById('movies'),search=document.getElementById('search');
+function renderTabs(){tabs.innerHTML=genreOrder.map(g=>`<button class="tab ${g===activeGenre?'active':''}" onclick="setGenre('${g}')">${g}</button>`).join('');}
+function setGenre(g){activeGenre=g;renderTabs();renderMovies();}
+function renderMovies(){const keyword=search.value.trim().toLowerCase();const filtered=movies.filter(m=>(activeGenre==='전체'||(m.genres||[]).includes(activeGenre))&&(!keyword||m.title.toLowerCase().includes(keyword)));document.getElementById('sectionTitle').textContent=`🎬 ${activeGenre==='전체'?'전체 영화':activeGenre}`;if(!filtered.length){list.innerHTML='<div class="empty">현재 표시할 영화 데이터가 없습니다.<br><small>실제 영화 데이터 연동 후 자동으로 채워집니다.</small></div>';return;}list.innerHTML=filtered.map(movie=>`<article class="card"><div class="poster">${movie.poster?`<img src="${movie.poster}" alt="${movie.title} 포스터" style="width:100%;height:100%;object-fit:cover">`:'포스터 준비 중'}</div><div class="info"><div class="title">${movie.title}</div><div class="meta">${movie.date||'개봉일 정보 없음'}${movie.rating?' · '+movie.rating:''}${movie.runtime?' · '+movie.runtime+'분':''}</div><div class="genre-list">${(movie.genres||[]).map(g=>`<span class="genre">${g}</span>`).join('')}</div><div class="cinemas">${(movie.cinemas||[]).map(c=>`<span class="cinema">${c}</span>`).join('')}</div><div class="buttons">${(movie.cinemas||[]).map(c=>official[c]?`<a class="btn" href="${official[c]}" target="_blank" rel="noopener">${c} 공식사이트</a>`:'').join('')}</div></div></article>`).join('');}
+search.addEventListener('input',renderMovies);renderTabs();renderMovies();
+function showLegal(id){document.querySelectorAll('.legal').forEach(el=>el.style.display='none');const target=document.getElementById(id);if(target){target.style.display='block';target.scrollIntoView({behavior:'smooth'});}}
+if(location.hash==='#terms'||location.hash==='#privacy')showLegal(location.hash.substring(1));
 </script>
 </body>
 </html>
