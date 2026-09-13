@@ -29,7 +29,6 @@ async function fetchKobis(url, timeoutMs = 8000, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    // KOBIS가 직접 제공하는 공식 데이터를 실시간으로 조회합니다.
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
@@ -101,13 +100,10 @@ function extractAnchorText(html) {
   return match ? normalizeMovieTitle(match[1]) : normalizeMovieTitle(html);
 }
 
-// KOBIS 공식 멀티체인별 상영현황 페이지에서 영화별 실제 상영 체인을 확인합니다.
-// 이 페이지는 KOBIS가 CGV/롯데시네마/메가박스의 상영횟수와 스크린수를 공식 제공하는 통계 페이지입니다.
+// KOBIS 공식 멀티체인별 상영현황에서 실제 상영 중인 체인을 확인합니다.
 async function getMultichainMap() {
   const targetDate = getKoreaDate(-1);
   const url = new URL(KOBIS_MULTICHAIN_URL);
-
-  // KOBIS 통계 페이지의 공식 조회 파라미터를 사용합니다.
   url.searchParams.set('loadEnd', '0');
   url.searchParams.set('searchType', 'search');
   url.searchParams.set('sSearchFrom', targetDate);
@@ -119,21 +115,17 @@ async function getMultichainMap() {
   const html = await response.text();
   const map = new Map();
 
-  // 표의 각 행을 읽어 영화명과 체인명을 연결합니다.
   for (const rowMatch of html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)) {
     const rowHtml = rowMatch[1];
     const cells = extractTableCells(rowHtml);
-    if (cells.length < 3) continue;
+    if (cells.length < 4) continue;
 
     const movieName = extractAnchorText(
       (rowHtml.match(/<td\b[^>]*>[\s\S]*?<a\b[^>]*>[\s\S]*?<\/a>[\s\S]*?<\/td>/i) || [])[0] || cells[1]
     );
     const chainName = normalizeCinemaName(cells[2]);
-    if (!movieName || !chainName) continue;
-
-    // 상영횟수가 0인 행은 상영 중인 체인으로 취급하지 않습니다.
     const screeningCount = Number(String(cells[3] || '').replace(/[^0-9]/g, '')) || 0;
-    if (screeningCount <= 0) continue;
+    if (!movieName || !chainName || screeningCount <= 0) continue;
 
     const key = normalizeMovieTitle(movieName);
     if (!map.has(key)) map.set(key, new Set());
@@ -165,31 +157,49 @@ function toMovie(row, rankFallback = 999) {
 
 async function getLiveMovies() {
   const rows = await fetchKobisJson(KOBIS_REAL_TICKET_URL);
-  const multichainPromise = getMultichainMap().catch(error => {
-    // 멀티체인 통계 조회에 실패하면 버튼을 만들지 않습니다. 추측은 하지 않습니다.
+  const multichainMap = await getMultichainMap().catch(error => {
+    // 상영 여부를 확인할 수 없으면 영화를 노출하지 않습니다. 추측하지 않습니다.
     console.error('MOVOKA KOBIS multichain error:', error);
-    return new Map();
+    return null;
   });
+
+  // 상영현황을 확인할 수 없는 경우 종료/예정작이 섞일 수 있으므로 빈 목록으로 처리합니다.
+  if (!multichainMap) {
+    return {
+      ok: true,
+      source: '영화진흥위원회 영화관입장권통합전산망(KOBIS) 공식 데이터',
+      basedAt: getKoreaDate(),
+      live: true,
+      cinemaCheckedAt: null,
+      movies: []
+    };
+  }
+
+  const today = getKoreaDate();
 
   const movies = rows
     .filter(row => row?.movieCd && row?.movieNm)
-    .slice(0, 20)
+    // 오늘 이후 개봉 예정작은 제거합니다.
+    .filter(row => {
+      const openDate = String(row.openDt || '').replace(/[^0-9]/g, '');
+      return !openDate || openDate <= today;
+    })
     .map((row, index) => toMovie(row, index + 1))
-    .sort((a, b) => a.rank - b.rank);
-
-  const multichainMap = await multichainPromise;
-
-  for (const movie of movies) {
-    const chains = multichainMap.get(normalizeMovieTitle(movie.title));
-    movie.cinemas = chains
-      ? CINEMA_NAMES.filter(name => chains.has(name))
-      : [];
-  }
+    .map(movie => {
+      const chains = multichainMap.get(normalizeMovieTitle(movie.title));
+      movie.cinemas = chains ? CINEMA_NAMES.filter(name => chains.has(name)) : [];
+      return movie;
+    })
+    // KOBIS 전일 멀티체인 상영횟수에 잡힌 영화만 노출합니다.
+    // 따라서 상영이 끝난 영화와 아직 상영 전인 예정작이 목록에서 제거됩니다.
+    .filter(movie => movie.cinemas.length > 0)
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 20);
 
   return {
     ok: true,
     source: '영화진흥위원회 영화관입장권통합전산망(KOBIS) 공식 데이터',
-    basedAt: getKoreaDate(),
+    basedAt: today,
     live: true,
     cinemaCheckedAt: getKoreaDate(-1),
     movies
@@ -219,7 +229,6 @@ export default {
       if (!movieCd) return json({ ok: false, message: 'movieCd가 필요합니다.' }, 400);
 
       try {
-        // 영화 정보 버튼을 누를 때도 공식 KOBIS 데이터를 실시간으로 조회합니다.
         const rows = await fetchKobisJson(KOBIS_REAL_TICKET_URL, 5000);
         const movie = rows.find(row => String(row?.movieCd) === String(movieCd));
         if (!movie) return json({ ok: true, plot: '', director: '', trailer: '' });
@@ -236,7 +245,6 @@ export default {
       }
     }
 
-    // 이전 비공식 수집 엔드포인트는 완전히 비활성화합니다.
     if (url.pathname === '/internal/refresh-cinema-links' && request.method === 'POST') {
       return json({
         ok: false,
@@ -245,7 +253,6 @@ export default {
       }, 501);
     }
 
-    // KOBIS 결과를 KV에 저장하는 기존 방식은 사용하지 않습니다.
     if (url.pathname === '/internal/refresh-movies' && request.method === 'POST') {
       return json({
         ok: false,
@@ -259,7 +266,7 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-19" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-20" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
