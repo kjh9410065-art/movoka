@@ -11,11 +11,11 @@ const GENRE_MAP = {
   '전쟁': '전쟁', '다큐멘터리': '다큐멘터리'
 };
 
-// 각 영화관의 현재 영화/예매 페이지를 확인해 해당 체인에서 실제로 노출되는 영화만 연결합니다.
+// 각 영화관의 현재 영화/예매 페이지입니다.
 const CINEMA_SOURCES = {
-  CGV: 'https://cgv.co.kr/cnm/movieBook',
-  롯데시네마: 'https://www.lottecinema.co.kr/NLCMW/ticketing?filter=movie',
-  메가박스: 'https://www.megabox.co.kr/movie'
+  CGV: 'https://cgv.co.kr/cnm/movieBook/movie',
+  롯데시네마: 'https://www.lottecinema.co.kr/NLCHS/Ticketing',
+  메가박스: 'https://www.megabox.co.kr/movie/film'
 };
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -37,34 +37,72 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 7000) {
   finally { clearTimeout(timer); }
 }
 
+// 극장 사이트가 Cloudflare/봇 차단으로 Worker 요청을 거부하는 경우를 대비해
+// 공식 페이지를 읽어주는 텍스트 프록시를 2차 경로로 사용합니다.
 async function fetchCinemaPage(url) {
+  const headers = {
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153 Safari/537.36',
+    accept: 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+    'accept-language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+  };
+
   try {
-    const response = await fetchWithTimeout(url, { redirect: 'follow', headers: { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/153 Safari/537.36', accept: 'text/html,application/xhtml+xml' } });
-    if (!response.ok) return '';
-    return await response.text();
+    const response = await fetchWithTimeout(url, { redirect: 'follow', headers }, 7000);
+    if (response.ok) {
+      const html = await response.text();
+      if (html && html.length > 500) return { html, available: true };
+    }
   } catch (error) {
-    console.error(`MOVOKA cinema source error (${url}):`, error);
-    return '';
+    console.error(`MOVOKA cinema direct source error (${url}):`, error);
   }
+
+  // 직접 접근이 막힌 경우 공식 URL을 그대로 읽어주는 Jina Reader를 사용합니다.
+  try {
+    const proxyUrl = `https://r.jina.ai/${url}`;
+    const response = await fetchWithTimeout(proxyUrl, {
+      redirect: 'follow',
+      headers: { 'user-agent': 'MOVOKA/1.0', accept: 'text/plain,text/html;q=0.9,*/*;q=0.8' }
+    }, 10000);
+    if (response.ok) {
+      const html = await response.text();
+      if (html && html.length > 200) return { html, available: true };
+    }
+  } catch (error) {
+    console.error(`MOVOKA cinema reader error (${url}):`, error);
+  }
+
+  // 소스 자체를 읽지 못한 경우 '상영 안 함'으로 취급하지 않습니다.
+  return { html: '', available: false };
 }
 
 async function getCinemaAvailability(movies) {
-  // 영화관 사이트가 서버 렌더링하지 않는 경우에도 기존 빈 배열을 그대로 고정하지 않습니다.
-  // 각 소스의 응답 상태와 HTML을 함께 검사해 실제 페이지에서 확인되는 체인만 넣습니다.
   const results = await Promise.all(Object.entries(CINEMA_SOURCES).map(async ([name, url]) => {
-    const html = await fetchCinemaPage(url);
-    return [name, { html: normalizeTitle(html), available: Boolean(html) }];
+    const source = await fetchCinemaPage(url);
+    return [name, { html: normalizeTitle(source.html), available: source.available }];
   }));
   const pageMap = new Map(results);
+  const successfulSources = results.filter(([, source]) => source.available).length;
+
   return movies.map(movie => {
     const title = normalizeTitle(movie.title);
-    const cinemas = title
+    const detected = title
       ? Object.keys(CINEMA_SOURCES).filter(name => {
           const source = pageMap.get(name);
           return source?.available && source.html.includes(title);
         })
       : [];
-    return { ...movie, cinemas };
+
+    // 한 체인이라도 정상 확인됐으면 그 결과를 사용합니다.
+    // 확인되지 않은 체인은 임의로 '미상영' 처리하지 않습니다.
+    if (successfulSources > 0) {
+      const unavailableSources = Object.keys(CINEMA_SOURCES).filter(name => !pageMap.get(name)?.available);
+      const previous = Array.isArray(movie.cinemas) ? movie.cinemas : [];
+      const preserved = previous.filter(name => unavailableSources.includes(name));
+      return { ...movie, cinemas: [...new Set([...detected, ...preserved])] };
+    }
+
+    // 모든 극장 소스가 일시적으로 막힌 경우 기존 값을 유지합니다.
+    return { ...movie, cinemas: Array.isArray(movie.cinemas) ? movie.cinemas : [] };
   });
 }
 
@@ -200,7 +238,7 @@ export default {
     const assetResponse = await env.ASSETS.fetch(request);
     const contentType = assetResponse.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
-      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-14" defer></script>', { html: true }); } }).transform(assetResponse);
+      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-15" defer></script>', { html: true }); } }).transform(assetResponse);
     }
     return assetResponse;
   },
