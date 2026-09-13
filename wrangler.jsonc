@@ -7,8 +7,5 @@
     "directory": "./public",
     "binding": "ASSETS",
     "run_worker_first": ["/api/*"]
-  },
-  "secrets": {
-    "required": ["KOPIS_API_KEY"]
   }
 }
