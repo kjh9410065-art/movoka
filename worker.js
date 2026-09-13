@@ -69,9 +69,10 @@ function extractAnchorText(html) {
   return match ? normalizeMovieTitle(match[1]) : normalizeMovieTitle(html);
 }
 
-// KOBIS 멀티체인 통계는 매일 24시 이후 전일자 통계로 제공됩니다.
+// 오늘 날짜의 KOBIS 멀티체인 상영현황을 조회합니다.
+// 이 날짜가 오늘과 일치하는 영화만 '현재 상영중'으로 간주합니다.
 async function getMultichainMap() {
-  const targetDate = getKoreaDate(-1);
+  const targetDate = getKoreaDate();
   const body = new URLSearchParams({ loadEnd: '0', searchType: 'search', sSearchFrom: formatKoreaDate(targetDate), sSearchTo: formatKoreaDate(targetDate) });
   const response = await fetchKobis(KOBIS_MULTICHAIN_URL, 10000, {
     method: 'POST',
@@ -109,31 +110,32 @@ function toMovie(row, rankFallback = 999) {
 async function getLiveMovies() {
   const [rows, multichain] = await Promise.all([
     fetchKobisJson(KOBIS_REAL_TICKET_URL),
-    getMultichainMap().catch(error => { console.error('MOVOKA KOBIS multichain error:', error); return null; })
+    getMultichainMap()
   ]);
   const today = getKoreaDate();
 
   const movies = rows
     .filter(row => row?.movieCd && row?.movieNm)
-    // scrnCnt로 자르면 KOBIS 실시간 목록의 일부 영화가 빠지므로 사용하지 않습니다.
-    // 개봉일이 오늘 이후인 예정작만 제외합니다.
+    // 개봉일이 오늘 이후인 예정작은 제외합니다.
     .filter(row => {
       const openDate = String(row.openDt || '').replace(/[^0-9]/g, '');
       return !openDate || openDate <= today;
     })
     .map((row, index) => toMovie(row, index + 1))
+    // 반드시 오늘 날짜의 KOBIS 멀티체인 상영현황에 존재하는 영화만 표시합니다.
     .map(movie => {
-      const chains = multichain?.map?.get(normalizeMovieTitle(movie.title));
+      const chains = multichain.map.get(normalizeMovieTitle(movie.title));
       movie.cinemas = chains ? CINEMA_NAMES.filter(name => chains.has(name)) : [];
       return movie;
     })
+    .filter(movie => movie.cinemas.length > 0)
     .sort((a, b) => a.rank - b.rank);
 
   return {
     ok: true,
     source: '영화진흥위원회 영화관입장권통합전산망(KOBIS) 공식 데이터',
     basedAt: today, live: true,
-    cinemaCheckedAt: multichain?.checkedDate || null,
+    cinemaCheckedAt: multichain.checkedDate,
     movies
   };
 }
@@ -161,7 +163,7 @@ export default {
     const assetResponse = await env.ASSETS.fetch(request);
     const contentType = assetResponse.headers.get('content-type') || '';
     if (contentType.includes('text/html')) {
-      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-24" defer></script>', { html: true }); } }).transform(assetResponse);
+      return new HTMLRewriter().on('body', { element(element) { element.append('<script src="/movoka-live.js?v=20260913-25" defer></script>', { html: true }); } }).transform(assetResponse);
     }
     return assetResponse;
   }
