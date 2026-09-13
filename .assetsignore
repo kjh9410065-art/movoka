@@ -1,5 +1,0 @@
-# Worker runtime/config files must not be publicly uploaded as static assets.
-worker.js
-wrangler.jsonc
-.assetsignore
-functions/
