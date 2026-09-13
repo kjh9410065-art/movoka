@@ -5,7 +5,6 @@ export default {
     const url = new URL(request.url);
     const key = env.KOPIS_API_KEY;
 
-    // 공연 목록 API
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({ error: 'KOPIS_API_KEY is not configured' }, { status: 500 });
 
@@ -18,7 +17,6 @@ export default {
       const endDate = url.searchParams.get('eddate') || ymd(endDateObj);
       const page = Math.max(1, Number(url.searchParams.get('cpage') || 1));
       const ticketable = url.searchParams.get('ticketable') === '1';
-      // 예매 가능 여부를 상세정보의 공식 예매처 목록으로 확인하므로 조회량을 제한합니다.
       const requestedRows = Math.min(100, Math.max(1, Number(url.searchParams.get('rows') || 100)));
       const rows = ticketable ? Math.min(30, requestedRows) : requestedRows;
       const genre = url.searchParams.get('shcate') || '';
@@ -31,7 +29,6 @@ export default {
       api.searchParams.set('eddate', endDate);
       api.searchParams.set('cpage', String(page));
       api.searchParams.set('rows', String(rows));
-      // 현재 공연중인 작품만 조회합니다. 예정작은 다음 단계에서 별도 영역으로 다룹니다.
       api.searchParams.set('prfstate', '02');
       if (genre) api.searchParams.set('shcate', genre);
       if (area) api.searchParams.set('signgucode', area);
@@ -39,7 +36,6 @@ export default {
 
       if (!ticketable) return proxyKopis(api);
 
-      // 목록의 각 공연 상세정보에서 KOPIS 공식 예매처 URL이 등록된 작품만 남깁니다.
       try {
         const response = await fetch(api.toString());
         const body = await response.text();
@@ -54,7 +50,6 @@ export default {
           try {
             const detailResponse = await fetch(detailUrl.toString());
             const detail = await detailResponse.text();
-            // KOPIS가 제공하는 공식 예매처 URL이 실제로 등록된 경우에만 노출합니다.
             const hasTicketUrl = /<relates>[\s\S]*?<relate>[\s\S]*?<relateurl>https?:\/\//i.test(detail);
             return hasTicketUrl ? block : null;
           } catch {
@@ -74,7 +69,6 @@ export default {
       }
     }
 
-    // 공연 상세 API
     if (url.pathname === '/api/performance') {
       if (!key) return Response.json({ error: 'KOPIS_API_KEY is not configured' }, { status: 500 });
       const id = url.searchParams.get('mt20id');
@@ -84,12 +78,13 @@ export default {
       return proxyKopis(api);
     }
 
-    // 정적 페이지의 버튼/안내 문구도 항상 최신 문구로 고정합니다.
     if (url.pathname === '/' || url.pathname === '/index.html') {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
-      html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)[^<]*(<\/button>)/gi, '$1예매처 바로가기$2');
-      html = html.replace(/>예매<\/button>/g, '>예매처 바로가기</button>');
+      // 기존 버튼 문구가 정확히 '예매'인 경우에만 보정합니다.
+      // 새 '예매처 비교' 문구는 그대로 유지해 UI 패치가 런타임에서 덮어써지지 않게 합니다.
+      html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)예매(<\/button>)/gi, '$1예매처 비교$2');
+      html = html.replace(/>예매<\/button>/g, '>예매처 비교</button>');
       html = html.replace("new URLSearchParams({rows:'100'})", "new URLSearchParams({rows:'30',ticketable:'1'})");
       html = html.replace(
         '공연정보는 KOPIS 공식 Open API를 통해 조회합니다. 데이터 갱신 시점에 따라 실제 공연·예매 정보와 차이가 있을 수 있습니다.',
@@ -102,7 +97,6 @@ export default {
   }
 };
 
-// KOPIS 응답을 그대로 전달하되 API 키는 서버에서만 사용합니다.
 async function proxyKopis(api) {
   try {
     const response = await fetch(api.toString());
