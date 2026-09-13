@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="현재 개봉 영화와 상영 영화관 정보를 한눈에 확인하는 MOVOKA">
+  <title>MOVOKA | 오늘 뭐 볼까?</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans KR",sans-serif;background:#f6f7fb;color:#17181c}a{text-decoration:none;color:inherit}.wrap{max-width:1100px;margin:auto;padding:0 20px}.header{background:#fff;border-bottom:1px solid #e8e9ee;position:sticky;top:0;z-index:10}.nav{height:70px;display:flex;align-items:center;justify-content:space-between}.logo{font-size:25px;font-weight:900;letter-spacing:-1px}.logo span{font-weight:500}.hero{padding:55px 0 35px}.hero h1{font-size:40px;margin:0 0 12px;letter-spacing:-2px}.hero p{margin:0;color:#666;font-size:17px}.section{padding:25px 0 55px}.section-title{display:flex;align-items:end;justify-content:space-between;margin-bottom:18px}.section-title h2{margin:0;font-size:25px}.updated{font-size:13px;color:#888}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}.card{background:#fff;border:1px solid #e6e7ec;border-radius:16px;overflow:hidden;box-shadow:0 3px 12px #00000008}.poster{height:310px;background:linear-gradient(135deg,#ddd,#f3f3f3);display:flex;align-items:center;justify-content:center;color:#999;font-size:14px}.info{padding:17px}.title{font-size:19px;font-weight:800;margin-bottom:8px}.meta{font-size:13px;color:#777;margin-bottom:14px}.cinemas{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.cinema{font-size:12px;font-weight:700;padding:6px 9px;border-radius:8px;background:#f1f2f5}.buttons{display:flex;gap:7px}.btn{flex:1;text-align:center;border:1px solid #ddd;border-radius:9px;padding:9px 5px;font-size:12px;font-weight:700;background:#fff}.btn:hover{background:#f3f4f6}.empty{text-align:center;padding:70px 20px;background:#fff;border:1px dashed #d9dbe2;border-radius:16px;color:#777}.notice{font-size:13px;color:#888;margin-top:18px;line-height:1.6}.footer{border-top:1px solid #e5e6eb;background:#fff;padding:25px 0;color:#888;font-size:12px}@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.poster{height:250px}.hero h1{font-size:32px}}@media(max-width:480px){.wrap{padding:0 14px}.nav{height:62px}.hero{padding:40px 0 25px}.hero h1{font-size:28px}.grid{gap:12px}.poster{height:210px}.info{padding:13px}.title{font-size:16px}}
+  </style>
+</head>
+<body>
+<header class="header"><div class="wrap nav"><a class="logo" href="/">MOVOKA<span>.</span></a><span style="font-size:13px;color:#888">오늘 뭐 볼까?</span></div></header>
+<main class="wrap">
+  <section class="hero"><h1>지금 볼 영화,<br>한눈에 찾아보세요.</h1><p>현재 개봉작과 상영 영화관 정보를 모아 보여드립니다.</p></section>
+  <section class="section">
+    <div class="section-title"><h2>🎬 현재 개봉작</h2><span class="updated">매일 업데이트 예정</span></div>
+    <div id="movies" class="grid"></div>
+    <div class="notice">※ 영화관별 상영 여부와 일정은 변경될 수 있습니다. 예매 및 자세한 정보는 각 영화관 공식 사이트에서 확인하세요.</div>
+  </section>
+</main>
+<footer class="footer"><div class="wrap">MOVOKA · 영화 정보를 한곳에서</div></footer>
+<script>
+  // 실제 영화 데이터 연동 전까지 화면 구조를 확인할 수 있도록 샘플 데이터를 사용합니다.
+  const movies = [
+    {title:'현재 개봉작 준비 중',date:'데이터 연동 예정',genre:'영화 정보',cinemas:['CGV','롯데시네마','메가박스']}
+  ];
+  const official = {CGV:'https://www.cgv.co.kr/',롯데시네마:'https://www.lottecinema.co.kr/',메가박스:'https://www.megabox.co.kr/'};
+  document.getElementById('movies').innerHTML = movies.map(movie => `
+    <article class="card">
+      <div class="poster">포스터</div>
+      <div class="info">
+        <div class="title">${movie.title}</div>
+        <div class="meta">${movie.date} · ${movie.genre}</div>
+        <div class="cinemas">${movie.cinemas.map(c=>`<span class="cinema">${c}</span>`).join('')}</div>
+        <div class="buttons">${movie.cinemas.map(c=>`<a class="btn" href="${official[c]}" target="_blank" rel="noopener">${c} 공식사이트</a>`).join('')}</div>
+      </div>
+    </article>`).join('');
+</script>
+</body>
+</html>
