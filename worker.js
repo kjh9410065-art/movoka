@@ -81,10 +81,9 @@ export default {
     if (url.pathname === '/' || url.pathname === '/index.html') {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
-      // 기존 버튼 문구가 정확히 '예매'인 경우에만 보정합니다.
-      // 새 '예매처 비교' 문구는 그대로 유지해 UI 패치가 런타임에서 덮어써지지 않게 합니다.
-      html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)예매(<\/button>)/gi, '$1예매처 비교$2');
-      html = html.replace(/>예매<\/button>/g, '>예매처 비교</button>');
+      // 카드의 예매 버튼 문구를 '예매 사이트'로 통일합니다.
+      html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
+      html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
       html = html.replace("new URLSearchParams({rows:'100'})", "new URLSearchParams({rows:'30',ticketable:'1'})");
       html = html.replace(
         '공연정보는 KOPIS 공식 Open API를 통해 조회합니다. 데이터 갱신 시점에 따라 실제 공연·예매 정보와 차이가 있을 수 있습니다.',
