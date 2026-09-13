@@ -56,9 +56,8 @@ async function getKoficJson(url) {
 }
 
 async function getPosterMap(targetDt) {
-  // KOBIS 공식 영화 페이지에서 영화코드와 함께 원본 포스터 경로도 제공합니다.
-  // 기존 thumbUrl은 작은 썸네일이라 카드에서 확대하면 흐릿해질 수 있으므로
-  // fileSaveLoct + sysFileNm으로 원본 이미지를 우선 사용하고 thumbUrl을 예비값으로 둡니다.
+  // KOBIS 공식 일일 데이터에는 원본 파일 위치(fileSaveLoct + sysFileNm)와
+  // 작은 썸네일(thumbUrl)이 함께 있습니다. 원본 포스터를 우선 사용합니다.
   const url = new URL(`${KOBIS_WEB_BASE}/kobis/business/main/searchMainDailyBoxOffice.do`);
   url.searchParams.set('startDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
   url.searchParams.set('endDate', `${targetDt.slice(0,4)}.${targetDt.slice(4,6)}.${targetDt.slice(6,8)}`);
@@ -68,7 +67,7 @@ async function getPosterMap(targetDt) {
   const rows = await response.json();
   const map = new Map();
 
-  // 공식 데이터의 원본 파일 경로를 사용합니다.
+  // 원본 파일 경로를 사용하면 thumbUrl 확대보다 선명한 포스터를 표시할 수 있습니다.
   for (const row of Array.isArray(rows) ? rows : []) {
     if (!row?.movieCd) continue;
 
@@ -77,7 +76,7 @@ async function getPosterMap(targetDt) {
       poster = new URL(`${row.fileSaveLoct}${row.sysFileNm}`, KOBIS_WEB_BASE).href;
     }
 
-    // 원본 경로가 없는 경우에만 기존 공식 썸네일을 사용합니다.
+    // 원본 정보가 없는 경우에만 공식 썸네일을 예비값으로 사용합니다.
     if (!poster && row.thumbUrl) {
       poster = new URL(row.thumbUrl, KOBIS_WEB_BASE).href;
     }
@@ -135,8 +134,6 @@ async function getMovies(env) {
         rank: Number(item.rank) || 999,
         audience: Number(item.audiAcc) || 0,
         screens: Number(item.scrnCnt) || 0,
-        shows: Number(item.showCnt) || 0,
-        // 작은 썸네일이 아니라 KOBIS가 제공하는 원본 포스터를 우선 표시합니다.
         poster: posterMap.get(String(movie.movieCd)) || '',
         // 실제 극장별 상영 여부가 확인되기 전까지는 임의의 극장명을 넣지 않습니다.
         cinemas: []
@@ -169,7 +166,8 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-3" defer></script>', { html: true });
+          // 정적 HTML 캐시 때문에 이전 화면이 남지 않도록 버전을 올립니다.
+          element.append('<script src="/movoka-live.js?v=20260913-4" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
