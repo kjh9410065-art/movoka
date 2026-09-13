@@ -1,5 +1,8 @@
 // MOVOKA Cloudflare Worker
-// KOPIS API 요청을 서버에서 처리하고 나머지는 정적 자산으로 전달합니다.
+// KOPIS API 요청은 서버에서 처리하고, 기본 공연 목록은 하루 한 번 캐시로 갱신합니다.
+
+const SNAPSHOT_CACHE_KEY = 'https://movoka-cache.local/api/performances?rows=30&ticketable=1';
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -23,6 +26,13 @@ export default {
       const area = url.searchParams.get('signgucodesub') || url.searchParams.get('signgucode') || '';
       const keyword = url.searchParams.get('shprfnm') || '';
 
+      // 검색/장르/지역 필터가 없는 기본 목록은 하루 1회 갱신된 스냅샷을 먼저 사용합니다.
+      const isDefaultList = !genre && !area && !keyword && page === 1 && ticketable && rows <= 30 && !url.searchParams.has('stdate') && !url.searchParams.has('eddate');
+      if (isDefaultList) {
+        const cached = await caches.default.match(SNAPSHOT_CACHE_KEY);
+        if (cached) return cached;
+      }
+
       const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
       api.searchParams.set('service', key);
       api.searchParams.set('stdate', startDate);
@@ -36,37 +46,7 @@ export default {
 
       if (!ticketable) return proxyKopis(api);
 
-      try {
-        const response = await fetch(api.toString());
-        const body = await response.text();
-        if (!response.ok) return new Response(body, { status: response.status, headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
-
-        const blocks = body.match(/<db>[\s\S]*?<\/db>/g) || [];
-        const filtered = await Promise.all(blocks.map(async block => {
-          const id = block.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1]?.trim();
-          if (!id || !/^PF\d+$/.test(id)) return null;
-          const detailUrl = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
-          detailUrl.searchParams.set('service', key);
-          try {
-            const detailResponse = await fetch(detailUrl.toString());
-            const detail = await detailResponse.text();
-            const hasTicketUrl = /<relates>[\s\S]*?<relate>[\s\S]*?<relateurl>https?:\/\//i.test(detail);
-            return hasTicketUrl ? block : null;
-          } catch {
-            return null;
-          }
-        }));
-
-        return new Response(`<dbs>${filtered.filter(Boolean).join('')}</dbs>`, {
-          status: 200,
-          headers: {
-            'Content-Type': 'application/xml; charset=utf-8',
-            'Cache-Control': 'no-store'
-          }
-        });
-      } catch {
-        return Response.json({ error: 'KOPIS ticket availability check failed' }, { status: 502 });
-      }
+      return filterTicketable(api, key, isDefaultList);
     }
 
     if (url.pathname === '/api/performance') {
@@ -93,8 +73,71 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
+  },
+
+  // Cloudflare Cron: 매일 KOPIS에서 기본 공연 목록을 받아 캐시 스냅샷을 갱신합니다.
+  async scheduled(controller, env, ctx) {
+    if (!env.KOPIS_API_KEY) return;
+
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    const ymd = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+    const end = new Date(now);
+    end.setDate(end.getDate() + 30);
+
+    const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
+    api.searchParams.set('service', env.KOPIS_API_KEY);
+    api.searchParams.set('stdate', ymd(now));
+    api.searchParams.set('eddate', ymd(end));
+    api.searchParams.set('cpage', '1');
+    api.searchParams.set('rows', '30');
+    api.searchParams.set('prfstate', '02');
+
+    // 기본 목록과 공식 예매 URL을 함께 확인해 매일 새 스냅샷을 만듭니다.
+    ctx.waitUntil(filterTicketable(api, env.KOPIS_API_KEY, true));
   }
 };
+
+async function filterTicketable(api, key, cacheSnapshot = false) {
+  try {
+    const response = await fetch(api.toString());
+    const body = await response.text();
+    if (!response.ok) return new Response(body, { status: response.status, headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
+
+    const blocks = body.match(/<db>[\s\S]*?<\/db>/g) || [];
+    const filtered = await Promise.all(blocks.map(async block => {
+      const id = block.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1]?.trim();
+      if (!id || !/^PF\d+$/.test(id)) return null;
+      const detailUrl = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
+      detailUrl.searchParams.set('service', key);
+      try {
+        const detailResponse = await fetch(detailUrl.toString());
+        const detail = await detailResponse.text();
+        const hasTicketUrl = /<relates>[\s\S]*?<relate>[\s\S]*?<relateurl>https?:\/\//i.test(detail);
+        return hasTicketUrl ? block : null;
+      } catch {
+        return null;
+      }
+    }));
+
+    const result = new Response(`<dbs>${filtered.filter(Boolean).join('')}</dbs>`, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/xml; charset=utf-8',
+        // 캐시된 스냅샷은 다음 Cron까지 유지되는 것을 목표로 합니다.
+        'Cache-Control': 'public, max-age=86400'
+      }
+    });
+
+    if (cacheSnapshot) {
+      await caches.default.put(SNAPSHOT_CACHE_KEY, result.clone());
+    }
+
+    return result;
+  } catch {
+    return Response.json({ error: 'KOPIS ticket availability check failed' }, { status: 502 });
+  }
+}
 
 async function proxyKopis(api) {
   try {
