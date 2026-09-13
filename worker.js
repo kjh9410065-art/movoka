@@ -68,6 +68,12 @@ function normalizeMovieTitle(value = '') {
     .replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function movieKey(value = '') {
+  return normalizeMovieTitle(value)
+    .replace(/[\s·:：'"“”‘’.,!?()[\]{}<>「」『』]/g, '')
+    .toLowerCase();
+}
+
 function normalizeCinemaName(value = '') {
   const text = normalizeMovieTitle(value);
   if (text.includes('CGV')) return 'CGV';
@@ -85,10 +91,10 @@ function extractAnchorText(html) {
   return match ? normalizeMovieTitle(match[1]) : normalizeMovieTitle(html);
 }
 
-// KOBIS 공식 멀티체인 페이지의 '오늘' 상영현황을 사용합니다.
-// 상영횟수 숫자는 화면에 표시하지 않고, 영화가 해당 체인 상영현황에 존재하는지만 사용합니다.
+// KOBIS 멀티체인 페이지는 전일자 통계를 24시 이후 제공하므로 전일 기준으로 체인 정보를 확인합니다.
+// 화면에는 상영횟수를 표시하지 않고, 최근 집계에 해당 영화가 어느 체인에 있었는지만 사용합니다.
 async function getMultichainMap() {
-  const targetDate = getKoreaDate();
+  const targetDate = getKoreaDate(-1);
   const url = new URL(KOBIS_MULTICHAIN_URL);
   url.searchParams.set('loadEnd', '0');
   url.searchParams.set('searchType', 'search');
@@ -106,12 +112,15 @@ async function getMultichainMap() {
     const cells = extractTableCells(rowHtml);
     if (cells.length < 3) continue;
 
-    const movieCell = (rowHtml.match(/<td\b[^>]*>[\s\S]*?<a\b[^>]*>[\s\S]*?<\/a>[\s\S]*?<\/td>/i) || [])[0];
-    const movieName = extractAnchorText(movieCell || cells[1] || cells[0]);
+    // 표 구조: 순위 / 영화명 / 체인영화관명 / ...
+    const movieCell = cells[1] || '';
     const chainName = normalizeCinemaName(cells[2]);
-    if (!movieName || !chainName) continue;
+    if (!movieCell || !chainName) continue;
 
-    const key = normalizeMovieTitle(movieName);
+    const movieAnchor = (rowHtml.match(/<td\b[^>]*>[\s\S]*?<a\b[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/td>/gi) || [])[0];
+    const movieName = movieAnchor ? extractAnchorText(movieAnchor) : movieCell;
+    const key = movieKey(movieName);
+    if (!key) continue;
     if (!map.has(key)) map.set(key, new Set());
     map.get(key).add(chainName);
   }
@@ -145,27 +154,23 @@ async function getLiveMovies() {
   const today = getKoreaDate();
   const movies = rows
     .filter(row => row?.movieCd && row?.movieNm)
-    // 개봉일이 오늘보다 뒤인 예정작은 제거합니다.
     .filter(row => {
       const openDate = String(row.openDt || '').replace(/[^0-9]/g, '');
       return !openDate || openDate <= today;
     })
     .map((row, index) => toMovie(row, index + 1))
     .map(movie => {
-      // 오늘 KOBIS 멀티체인 상영현황에 실제로 등록된 체인만 연결합니다.
-      const chains = multichainMap.get(normalizeMovieTitle(movie.title));
+      const chains = multichainMap.get(movieKey(movie.title));
       movie.cinemas = chains ? CINEMA_NAMES.filter(name => chains.has(name)) : [];
       return movie;
     })
-    // 오늘 상영현황에 존재하지 않는 영화는 종료작으로 보고 목록에서 제거합니다.
     .filter(movie => movie.cinemas.length > 0)
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, 20);
+    .sort((a, b) => a.rank - b.rank);
 
   return {
     ok: true,
     source: '영화진흥위원회 영화관입장권통합전산망(KOBIS) 공식 데이터',
-    basedAt: today, live: true, cinemaCheckedAt: today, movies
+    basedAt: today, live: true, cinemaCheckedAt: getKoreaDate(-1), movies
   };
 }
 
@@ -209,7 +214,7 @@ export default {
     if (contentType.includes('text/html')) {
       return new HTMLRewriter().on('body', {
         element(element) {
-          element.append('<script src="/movoka-live.js?v=20260913-21" defer></script>', { html: true });
+          element.append('<script src="/movoka-live.js?v=20260913-22" defer></script>', { html: true });
         }
       }).transform(assetResponse);
     }
