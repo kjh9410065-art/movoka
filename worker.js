@@ -124,8 +124,8 @@ async function filterTicketable(api, key, cacheSnapshot = false) {
       status: 200,
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
-        // 캐시된 스냅샷은 다음 Cron까지 유지되는 것을 목표로 합니다.
-        'Cache-Control': 'public, max-age=86400'
+        // 캐시가 갱신되지 않는 상황에서도 최대 7일까지만 오래된 스냅샷을 허용합니다.
+        'Cache-Control': 'public, max-age=604800'
       }
     });
 
