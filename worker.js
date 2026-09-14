@@ -1,6 +1,6 @@
 // MOVOKA Cloudflare Worker
 // KOPIS 공연 데이터를 서버에서 받아 프론트에 전달합니다.
-// 페이지네이션 없이 조회된 공연을 모두 표시합니다.
+// 페이지네이션은 아직 적용하지 않고, 가져온 목록을 브라우저에 저장합니다.
 
 const FETCH_ROWS = 100;
 
@@ -57,7 +57,7 @@ export default {
       if (area) api.searchParams.set('signgucode', area);
       if (keyword) api.searchParams.set('shprfnm', keyword);
 
-      // 전체 탭은 shcate가 없으므로 모든 카테고리 공연을 하나의 목록으로 반환합니다.
+      // 전체 탭은 모든 카테고리를 하나의 KOPIS 목록으로 가져옵니다.
       return proxyKopis(api);
     }
 
@@ -72,13 +72,37 @@ export default {
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      // 페이지네이션을 제거하고 기존 index.html을 그대로 제공합니다.
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
 
-      // 예매 버튼 문구만 통일합니다.
+      // 예매 버튼 문구를 통일합니다.
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
+
+      // 공연 목록 API 응답을 브라우저 localStorage에 저장합니다.
+      // 현재 단계에서는 기존 화면 동작은 건드리지 않고 '가져온 데이터 저장'만 합니다.
+      const storageScript = `
+<script>
+(function(){
+  const originalFetch = window.fetch;
+  window.fetch = async function(input, init){
+    const response = await originalFetch.call(this, input, init);
+    try {
+      const requestUrl = typeof input === 'string' ? input : (input && input.url) || '';
+      if (requestUrl.includes('/api/performances')) {
+        const body = await response.clone().text();
+        localStorage.setItem('movoka-performances-cache', JSON.stringify({
+          url: requestUrl,
+          data: body,
+          savedAt: Date.now()
+        }));
+      }
+    } catch (_) {}
+    return response;
+  };
+})();
+</script>`;
+      html = html.replace('</body>', storageScript + '</body>');
 
       const headers = new Headers(asset.headers);
       headers.delete('Content-Length');
