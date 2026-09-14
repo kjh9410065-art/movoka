@@ -86,7 +86,6 @@ export default {
       html = html.replace('</script></body>', `<script>
 // 페이지 이동은 KOPIS의 cpage 파라미터를 사용해 서버에서 다음 목록을 가져옵니다.
 (function(){
-  const originalLoad = window.load;
   let currentPage = 1;
 
   async function loadPage(page){
@@ -115,7 +114,7 @@ export default {
       if(typeof lastItems !== 'undefined') lastItems = items;
       if(typeof renderItems === 'function') renderItems(items);
 
-      // KOPIS 응답의 전체 건수를 이용해 페이지 수를 계산합니다.
+      // KOPIS 응답의 전체 건수를 이용해 정확한 페이지 수를 계산합니다.
       const doc = new DOMParser().parseFromString(xml, 'text/xml');
       const total = Number(doc.querySelector('totalcount')?.textContent || 0);
       const totalPages = total ? Math.max(1, Math.ceil(total / 30)) : (items.length === 30 ? currentPage + 1 : currentPage);
@@ -142,7 +141,7 @@ export default {
     el.querySelectorAll('button[data-page]').forEach(btn=>btn.onclick=()=>{if(!btn.disabled)loadPage(Number(btn.dataset.page));});
   }
 
-  // 최초 로딩도 새 페이지네이션 로직으로 교체합니다.
+  // 최초 로딩과 카테고리/검색 변경도 새 페이지네이션 로직을 사용합니다.
   window.load = loadPage;
   loadPage(1);
 })();
@@ -214,6 +213,8 @@ async function filterTicketable(api, key, cacheSnapshot = false) {
     const body = await response.text();
     if (!response.ok) return new Response(body, { status: response.status, headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
 
+    // 원본 KOPIS 응답의 전체 건수를 보존해 프론트에서 페이지 수를 계산할 수 있게 합니다.
+    const totalCount = body.match(/<totalcount>([\s\S]*?)<\/totalcount>/i)?.[1]?.trim() || '';
     const blocks = body.match(/<db>[\s\S]*?<\/db>/g) || [];
     const filtered = await Promise.all(blocks.map(async block => {
       const id = block.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1]?.trim();
@@ -230,7 +231,7 @@ async function filterTicketable(api, key, cacheSnapshot = false) {
       }
     }));
 
-    return new Response(`<dbs>${filtered.filter(Boolean).join('')}</dbs>`, {
+    return new Response(`<dbs><totalcount>${totalCount}</totalcount>${filtered.filter(Boolean).join('')}</dbs>`, {
       status: 200,
       headers: {
         'Content-Type': 'application/xml; charset=utf-8',
