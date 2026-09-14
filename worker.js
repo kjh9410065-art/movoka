@@ -1,5 +1,5 @@
 // MOVOKA Cloudflare Worker
-// KOPIS 공연 데이터를 충분히 가져온 뒤, 화면에서는 12개씩 나눠 보여줍니다.
+// KOPIS 공연 데이터를 최대 100개 가져온 뒤, 화면에서는 12개씩 나눠 보여줍니다.
 
 const FETCH_ROWS = 100;
 const PAGE_SIZE = 12;
@@ -22,8 +22,7 @@ export default {
     const url = new URL(request.url);
     const key = env.KOPIS_API_KEY;
 
-    // 공연 목록 API: 한 번에 최대 100개를 가져옵니다.
-    // 실제 화면의 12개 페이지 분할은 브라우저에서 처리합니다.
+    // 공연 목록은 KOPIS의 전체/선택 카테고리를 최대 100개까지 가져옵니다.
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({ error: 'KOPIS_API_KEY is not configured' }, { status: 500 });
 
@@ -81,14 +80,12 @@ export default {
 </style>`;
       html = html.replace('</head>', paginationCss + '</head>');
 
-      // 공연 목록 아래에 페이지 번호를 삽입
-      html = html.replace('<footer>', '<div id="pagination" aria-label="공연 목록 페이지 이동"></div><footer>');
+      // 공연 목록 바로 아래에 페이지 번호를 넣습니다. footer 유무와 관계없이 항상 표시됩니다.
+      html = html.replace('</section></main>', '</section><div id="pagination" aria-label="공연 목록 페이지 이동"></div></main>');
 
-      // 기존 index.html의 load()를 덮어쓰고, 전체 카테고리는 모든 장르를 합쳐서 가져옵니다.
       const paginationScript = `<script>
 (function(){
   const PAGE_SIZE = 12;
-  const ALL_GENRES = ['', 'AAAA', 'GGGA', 'CCCA', 'CCCC', 'CCCD', 'BBBC', 'BBBR', 'EEEB', 'EEEA', 'KID'];
   let allItems = [];
   let currentPage = 1;
   let requestToken = 0;
@@ -110,44 +107,24 @@ export default {
     ));
   }
 
-  async function fetchGenre(genre, filters){
-    const p = new URLSearchParams({ rows:'100', cpage:'1' });
-    if (genre) p.set('shcate', genre);
-    if (filters.area) p.set('signgucode', filters.area);
-    if (filters.keyword) p.set('shprfnm', filters.keyword);
-    const response = await fetch('/api/performances?' + p.toString());
-    if (!response.ok) throw new Error('KOPIS request failed');
-    return parseItems(await response.text());
-  }
-
   async function loadAll(){
     const token = ++requestToken;
     const grid = document.querySelector('#grid');
-    const pagination = document.querySelector('#pagination');
     if (!grid) return;
-
     grid.innerHTML = '<div class="empty">공연 정보를 불러오는 중입니다.</div>';
-    if (pagination) pagination.innerHTML = '';
 
-    const filters = getFilters();
-    let items = [];
+    const f = getFilters();
+    const p = new URLSearchParams({rows:'100', cpage:'1'});
+    if (f.genre) p.set('shcate', f.genre);
+    if (f.area) p.set('signgucode', f.area);
+    if (f.keyword) p.set('shprfnm', f.keyword);
 
     try {
-      if (filters.genre) {
-        // 특정 카테고리: 해당 카테고리 데이터를 최대 100개 가져옵니다.
-        items = await fetchGenre(filters.genre, filters);
-      } else {
-        // 전체: 모든 카테고리 데이터를 각각 가져와 하나의 목록으로 합칩니다.
-        const results = await Promise.all(ALL_GENRES.slice(1).map(genre => fetchGenre(genre, filters)));
-        const seen = new Set();
-        results.flat().forEach(item => {
-          if (item.mt20id && !seen.has(item.mt20id)) {
-            seen.add(item.mt20id);
-            items.push(item);
-          }
-        });
-      }
-
+      // 전체 탭은 shcate를 보내지 않으므로 KOPIS가 모든 카테고리를 한 목록으로 반환합니다.
+      // 특정 카테고리 탭에서는 해당 장르만 가져옵니다.
+      const response = await fetch('/api/performances?' + p.toString());
+      if (!response.ok) throw new Error('KOPIS request failed');
+      const items = parseItems(await response.text());
       if (token !== requestToken) return;
 
       allItems = items;
@@ -156,6 +133,8 @@ export default {
     } catch (error) {
       if (token !== requestToken) return;
       grid.innerHTML = '<div class="empty">공연 정보를 불러오지 못했습니다.</div>';
+      const pagination = document.querySelector('#pagination');
+      if (pagination) pagination.innerHTML = '';
     }
   }
 
@@ -163,7 +142,7 @@ export default {
     const start = (currentPage - 1) * PAGE_SIZE;
     const pageItems = allItems.slice(start, start + PAGE_SIZE);
 
-    // 기존 카드 렌더러를 사용하므로 상세보기/즐겨찾기 기능은 그대로 유지됩니다.
+    // 기존 카드 렌더러를 그대로 사용합니다.
     if (typeof lastItems !== 'undefined') lastItems = pageItems;
     if (typeof renderItems === 'function') renderItems(pageItems);
 
@@ -175,24 +154,23 @@ export default {
     if (!el) return;
 
     const totalPages = Math.ceil(allItems.length / PAGE_SIZE);
+
+    // 12개 이하이면 페이지 번호를 만들지 않습니다.
     if (totalPages <= 1) {
       el.innerHTML = '';
       return;
     }
 
-    // 페이지 수가 많아져도 번호가 무한히 늘어나지 않도록 10개씩 묶습니다.
+    // 페이지 번호 자체는 PC 10개, 모바일 5개씩 묶어서 보여줍니다.
     const groupSize = window.innerWidth <= 480 ? 5 : 10;
     const groupStart = Math.floor((currentPage - 1) / groupSize) * groupSize + 1;
     const groupEnd = Math.min(totalPages, groupStart + groupSize - 1);
-    let html = '';
-
-    html += '<button class="nav" data-page="'+(currentPage-1)+'" '+(currentPage===1?'disabled':'')+'>‹ 이전</button>';
+    let html = '<button class="nav" data-page="'+(currentPage-1)+'" '+(currentPage===1?'disabled':'')+'>‹ 이전</button>';
     html += '<div class="page-list">';
-    for(let i=groupStart; i<=groupEnd; i++) {
+    for (let i=groupStart; i<=groupEnd; i++) {
       html += '<button class="'+(i===currentPage?'active':'')+'" data-page="'+i+'">'+i+'</button>';
     }
-    html += '</div>';
-    html += '<button class="nav" data-page="'+(currentPage+1)+'" '+(currentPage===totalPages?'disabled':'')+'>다음 ›</button>';
+    html += '</div><button class="nav" data-page="'+(currentPage+1)+'" '+(currentPage===totalPages?'disabled':'')+'>다음 ›</button>';
 
     el.innerHTML = html;
     el.querySelectorAll('[data-page]').forEach(button => {
@@ -205,36 +183,28 @@ export default {
     });
   }
 
-  function reloadFromFilter(e){
-    e.stopImmediatePropagation();
-    loadAll();
-  }
-
   window.addEventListener('load', () => {
-    // 기존 onclick보다 먼저 동작하도록 캡처 단계에서 필터 이벤트를 가로챕니다.
+    // 기존 이벤트보다 먼저 필터 동작을 가로채고 새 목록을 불러옵니다.
     document.querySelectorAll('.chip').forEach(button => {
       button.addEventListener('click', e => {
         e.stopImmediatePropagation();
         document.querySelectorAll('.chip').forEach(x => x.classList.toggle('active', x === button));
-        if (typeof active !== 'undefined') active = button.dataset.id || '';
-        showFav = false;
-        const fav = document.querySelector('#favFilter');
-        if (fav) fav.classList.remove('active');
         loadAll();
       }, true);
     });
 
     const go = document.querySelector('#go');
-    if (go) go.addEventListener('click', reloadFromFilter, true);
+    if (go) go.addEventListener('click', e => { e.stopImmediatePropagation(); loadAll(); }, true);
 
     const q = document.querySelector('#q');
     if (q) q.addEventListener('keydown', e => {
-      if (e.key === 'Enter') reloadFromFilter(e);
+      if (e.key === 'Enter') { e.stopImmediatePropagation(); loadAll(); }
     }, true);
 
     const area = document.querySelector('#area');
-    if (area) area.addEventListener('change', reloadFromFilter, true);
+    if (area) area.addEventListener('change', e => { e.stopImmediatePropagation(); loadAll(); }, true);
 
+    // 첫 화면도 100개 데이터를 받아 12개씩 표시합니다.
     loadAll();
   });
 
