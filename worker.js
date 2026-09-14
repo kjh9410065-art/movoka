@@ -79,6 +79,74 @@ export default {
         '공연정보는 KOPIS 공식 Open API를 통해 조회합니다. 데이터 갱신 시점에 따라 실제 공연·예매 정보와 차이가 있을 수 있습니다.',
         'MOVOKA는 공연 정보를 제공하는 서비스이며, 예매는 각 공식 예매처에서 진행됩니다.<br>공연정보는 KOPIS 공식 Open API를 통해 조회합니다. 데이터 갱신 시점에 따라 실제 공연·예매 정보와 차이가 있을 수 있습니다.'
       );
+
+      // 기존 정적 페이지는 건드리지 않고, 여기서 페이지네이션 UI와 동작만 주입합니다.
+      html = html.replace('</style></head>', `.pagination{display:flex;justify-content:center;align-items:center;gap:7px;flex-wrap:wrap;margin:-35px 0 70px}.pagination button{min-width:38px;height:38px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800}.pagination button.active{background:var(--primary);border-color:var(--primary);color:#fff}.pagination button:disabled{opacity:.4;cursor:default}@media(max-width:480px){.pagination{gap:5px}.pagination button{min-width:34px;height:34px}}` + '</style></head>');
+      html = html.replace('</main>', '<div class="pagination" id="pagination" aria-label="공연 목록 페이지 이동"></div></main>');
+      html = html.replace('</script></body>', `<script>
+// 페이지 이동은 KOPIS의 cpage 파라미터를 사용해 서버에서 다음 목록을 가져옵니다.
+(function(){
+  const originalLoad = window.load;
+  let currentPage = 1;
+
+  async function loadPage(page){
+    currentPage = Math.max(1, page);
+    const grid = document.querySelector('#grid');
+    const count = document.querySelector('#count');
+    const pagination = document.querySelector('#pagination');
+    if(!grid) return;
+    grid.innerHTML = '<div class="empty">공연 정보를 불러오는 중입니다.</div>';
+
+    const p = new URLSearchParams({rows:'30', ticketable:'1', cpage:String(currentPage)});
+    const chips = document.querySelectorAll('.chip');
+    const active = [...chips].find(b => b.classList.contains('active'))?.dataset.id || '';
+    const area = document.querySelector('#area')?.value || '';
+    const keyword = document.querySelector('#q')?.value.trim() || '';
+    if(active) p.set('shcate', active);
+    if(area) p.set('signgucodesub', area);
+    if(keyword) p.set('shprfnm', keyword);
+
+    try{
+      const response = await fetch('/api/performances?' + p.toString());
+      if(!response.ok) throw new Error();
+      const xml = await response.text();
+      // 기존 페이지의 XML 파서를 그대로 활용합니다.
+      const items = typeof parse === 'function' ? parse(xml) : [];
+      if(typeof lastItems !== 'undefined') lastItems = items;
+      if(typeof renderItems === 'function') renderItems(items);
+
+      // KOPIS 응답의 전체 건수를 이용해 페이지 수를 계산합니다.
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      const total = Number(doc.querySelector('totalcount')?.textContent || 0);
+      const totalPages = total ? Math.max(1, Math.ceil(total / 30)) : (items.length === 30 ? currentPage + 1 : currentPage);
+      renderPagination(totalPages);
+      if(count && total) count.textContent = `공연 ${total.toLocaleString()}개`;
+    }catch(e){
+      if(count) count.textContent = '';
+      grid.innerHTML = '<div class="empty">공연 정보를 불러오지 못했습니다.</div>';
+      if(pagination) pagination.innerHTML = '';
+    }
+  }
+
+  function renderPagination(totalPages){
+    const el = document.querySelector('#pagination');
+    if(!el) return;
+    if(totalPages <= 1){el.innerHTML='';return;}
+    const start = Math.max(1, Math.floor((currentPage - 1) / 10) * 10 + 1);
+    const end = Math.min(totalPages, start + 9);
+    const buttons=[];
+    buttons.push(`<button ${currentPage===1?'disabled':''} data-page="${currentPage-1}" aria-label="이전 페이지">‹</button>`);
+    for(let i=start;i<=end;i++) buttons.push(`<button class="${i===currentPage?'active':''}" data-page="${i}">${i}</button>`);
+    buttons.push(`<button ${currentPage===totalPages?'disabled':''} data-page="${currentPage+1}" aria-label="다음 페이지">›</button>`);
+    el.innerHTML=buttons.join('');
+    el.querySelectorAll('button[data-page]').forEach(btn=>btn.onclick=()=>{if(!btn.disabled)loadPage(Number(btn.dataset.page));});
+  }
+
+  // 최초 로딩도 새 페이지네이션 로직으로 교체합니다.
+  window.load = loadPage;
+  loadPage(1);
+})();
+</script></body>`);
       return new Response(html, { status: asset.status, headers: asset.headers });
     }
 
