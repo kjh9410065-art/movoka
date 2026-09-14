@@ -1,9 +1,10 @@
 // MOVOKA Cloudflare Worker
 // KOPIS API 요청은 서버에서 처리하고, 기본 공연 목록은 하루 한 번 캐시로 갱신합니다.
 
-const SNAPSHOT_PREFIX = 'https://movoka-cache.local/v3/performances/snapshot/';
+const SNAPSHOT_PREFIX = 'https://movoka-cache.local/v4/performances/snapshot/';
 const SNAPSHOT_TTL_DAYS = 7;
 const PAGE_SIZE = 10;
+const ALL_GENRES = ['AAAA','GGGA','CCCA','CCCC','CCCD','BBBC','BBBE','EEEB','EEEA'];
 
 function snapshotKey(date) { return `${SNAPSHOT_PREFIX}${date}`; }
 function dateStamp(date) {
@@ -37,8 +38,10 @@ export default {
       const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
       api.searchParams.set('service',key); api.searchParams.set('stdate',startDate); api.searchParams.set('eddate',endDate);
       api.searchParams.set('cpage',String(page)); api.searchParams.set('rows',String(rows)); api.searchParams.set('prfstate','02');
-      if(genre)api.searchParams.set('shcate',genre); if(area)api.searchParams.set('signgucode',area); if(keyword)api.searchParams.set('shprfnm',keyword);
-      // 전체 공연을 가져옵니다. 예매처 유무로 목록을 잘라내지 않아 전체 공연 수와 페이지 수가 정확하게 유지됩니다.
+      if(genre) api.searchParams.set('shcate',genre);
+      if(area) api.searchParams.set('signgucode',area);
+      if(keyword) api.searchParams.set('shprfnm',keyword);
+      // 장르가 비어 있으면 KOPIS의 '전체' 조회입니다. 특정 장르 하나만 조회하거나 30개로 잘라내지 않습니다.
       return proxyKopis(api);
     }
 
