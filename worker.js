@@ -1,7 +1,7 @@
 // MOVOKA Cloudflare Worker
 // KOPIS API 요청은 서버에서 처리하고 기본 공연 목록은 하루 한 번 캐시로 갱신합니다.
 
-const SNAPSHOT_PREFIX = 'https://movoka-cache.local/v4/performances/snapshot/';
+const SNAPSHOT_PREFIX = 'https://movoka-cache.local/v5/performances/snapshot/';
 const SNAPSHOT_TTL_DAYS = 7;
 const PAGE_SIZE = 10;
 
@@ -51,8 +51,10 @@ export default {
       // 페이지네이션을 main 내부의 footer 바로 위에 넣어 DOM 위치를 확실하게 고정합니다.
       html=html.replace('<footer>','<div class="ad-slot" id="ad-bottom" data-ad-slot="bottom" aria-label="광고"></div><div class="pagination" id="pagination" aria-label="공연 목록 페이지 이동"></div><footer>');
 
-      // HTML을 수정했으므로 원본 ASSET의 Content-Length는 폐기합니다.
-      const headers=new Headers(asset.headers); headers.delete('Content-Length');
+      // HTML을 수정했으므로 원본 ASSET의 Content-Length는 폐기하고 캐시도 사용하지 않습니다.
+      const headers=new Headers(asset.headers);
+      headers.delete('Content-Length');
+      headers.set('Cache-Control','no-store, no-cache, must-revalidate');
 
       const paginationScript=`<script>(function(){
 function getFilters(){var a=document.querySelector('.chip.active');return {genre:a?(a.dataset.id||''):'',area:(document.querySelector('#area')||{}).value||'',keyword:((document.querySelector('#q')||{}).value||'').trim()};}
