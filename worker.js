@@ -80,6 +80,24 @@ export default {
         'MOVOKA는 공연 정보를 제공하는 서비스이며, 예매는 각 공식 예매처에서 진행됩니다.<br>공연정보는 KOPIS 공식 Open API를 통해 조회합니다. 데이터 갱신 시점에 따라 실제 공연·예매 정보와 차이가 있을 수 있습니다.'
       );
 
+      // 광고 플랫폼을 나중에 연결할 수 있는 슬롯입니다. 실제 광고가 없으면 화면에서 완전히 숨깁니다.
+      html = html.replace('</style></head>', `.ad-slot{display:none;width:100%;min-height:90px;margin:0 0 24px;align-items:center;justify-content:center;overflow:hidden}.ad-slot.has-ad{display:flex}.ad-slot ins,.ad-slot iframe{max-width:100%}@media(max-width:480px){.ad-slot{min-height:60px;margin-bottom:18px}}` + '</style></head>');
+      html = html.replace('<div class="toolbar">', '<div class="ad-slot" id="ad-top" data-ad-slot="top" aria-label="광고"></div><div class="toolbar">');
+      html = html.replace('<footer>', '<div class="ad-slot" id="ad-bottom" data-ad-slot="bottom" aria-label="광고"></div><footer>');
+      html = html.replace('</script></body>', `<script>
+// 광고 코드를 연결할 때만 슬롯을 표시합니다. 빈 슬롯은 사용자 화면에 노출하지 않습니다.
+(function(){
+  function refreshAdSlots(){
+    document.querySelectorAll('.ad-slot').forEach(slot=>{
+      const hasAd = !!slot.querySelector('ins,iframe,img,a,[data-ad-loaded]');
+      slot.classList.toggle('has-ad', hasAd);
+    });
+  }
+  refreshAdSlots();
+  new MutationObserver(refreshAdSlots).observe(document.body,{childList:true,subtree:true});
+})();
+</script></body>`);
+
       // 기존 정적 페이지는 건드리지 않고, 여기서 페이지네이션 UI와 동작만 주입합니다.
       html = html.replace('</style></head>', `.pagination{display:flex;justify-content:center;align-items:center;gap:7px;flex-wrap:wrap;margin:-35px 0 70px}.pagination button{min-width:38px;height:38px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800}.pagination button.active{background:var(--primary);border-color:var(--primary);color:#fff}.pagination button:disabled{opacity:.4;cursor:default}@media(max-width:480px){.pagination{gap:5px}.pagination button{min-width:34px;height:34px}}` + '</style></head>');
       html = html.replace('</main>', '<div class="pagination" id="pagination" aria-label="공연 목록 페이지 이동"></div></main>');
