@@ -1,6 +1,6 @@
 // MOVOKA Cloudflare Worker
 // KOPIS 공연 데이터를 서버에서 받아 프론트에 전달합니다.
-// 브라우저에 저장된 목록을 12개씩 나눠 표시합니다.
+// 가져온 공연 목록은 브라우저에 저장하고, 저장된 목록의 화면 표시만 페이지로 나눕니다.
 
 const FETCH_ROWS = 100;
 
@@ -75,7 +75,7 @@ export default {
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
-      // 공연 목록 API 응답은 기존처럼 localStorage에 저장합니다.
+      // 공연 목록을 가져오면 원본 XML을 브라우저에 저장합니다.
       const storageScript = `<script>
 (function(){
   const originalFetch=window.fetch;
@@ -95,7 +95,8 @@ export default {
 </script>`;
       html = html.replace('</head>', storageScript + '</head>');
 
-      // 저장된 목록을 12개씩 나눕니다. 페이지를 누를 때 API를 다시 호출하지 않습니다.
+      // 저장된 공연 목록을 12개씩 나눠 표시합니다.
+      // 페이지 이동에서는 API를 다시 호출하지 않고 이미 표시된 목록만 전환합니다.
       const paginationScript = `<style>
 #movoka-pagination{display:flex;justify-content:center;align-items:center;gap:7px;flex-wrap:wrap;margin:-40px 0 70px}
 #movoka-pagination button{min-width:38px;height:38px;padding:0 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800}
@@ -104,56 +105,66 @@ export default {
 (function(){
   const PAGE_SIZE=12;
   let currentPage=1;
-  let lastCacheUrl='';
+  let renderTimer=null;
+  let lastSignature='';
 
-  function getSaved(){
-    try{return JSON.parse(localStorage.getItem('movoka-performances-cache')||'null')}catch(_){return null}
-  }
-
-  function parseSaved(){
-    const saved=getSaved();
-    if(!saved?.data) return [];
-    try{
-      const doc=new DOMParser().parseFromString(saved.data,'text/xml');
-      return [...doc.querySelectorAll('db')].map(n=>Object.fromEntries(
-        ['mt20id','prfnm','prfpdfrom','prfpdto','fcltynm','poster','genrenm','prfcast','prfurl']
-          .map(k=>[k,n.querySelector(k)?.textContent||''])
-      ));
-    }catch(_){return []}
+  function getCards(){
+    return [...document.querySelectorAll('#grid > .card')];
   }
 
   function draw(){
-    const saved=getSaved();
-    const items=parseSaved();
-    if(!items.length || typeof window.renderItems!=='function') return;
-
-    const totalPages=Math.ceil(items.length/PAGE_SIZE);
-    if(currentPage>totalPages) currentPage=totalPages;
-
-    // 저장된 전체 목록에서 현재 페이지의 12개만 잘라 기존 카드 렌더러에 전달합니다.
-    window.renderItems(items.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE));
-
+    const grid=document.getElementById('grid');
     const box=document.getElementById('movoka-pagination');
-    if(!box) return;
-    if(totalPages<=1){box.innerHTML='';return}
+    if(!grid||!box)return;
 
-    box.innerHTML=Array.from({length:totalPages},(_,i)=>{
-      const p=i+1;
-      return '<button class="'+(p===currentPage?'active':'')+'" data-page="'+p+'">'+p+'</button>';
-    }).join('');
+    const cards=getCards();
+    const signature=cards.map(x=>x.querySelector('.title')?.textContent||'').join('|');
+    if(signature!==lastSignature){
+      lastSignature=signature;
+      currentPage=1;
+    }
 
-    box.querySelectorAll('button').forEach(btn=>btn.onclick=function(){
-      currentPage=Number(btn.dataset.page);
-      draw();
-      window.scrollTo({top:document.getElementById('grid').offsetTop-90,behavior:'smooth'});
+    const totalPages=Math.ceil(cards.length/PAGE_SIZE);
+    if(totalPages<=1){
+      cards.forEach(card=>card.style.display='');
+      box.innerHTML='';
+      return;
+    }
+
+    if(currentPage>totalPages)currentPage=totalPages;
+
+    // 저장된 전체 목록 중 현재 페이지의 12개만 보입니다.
+    cards.forEach((card,index)=>{
+      const first=(currentPage-1)*PAGE_SIZE;
+      card.style.display=index>=first&&index<first+PAGE_SIZE?'':'none';
     });
 
-    lastCacheUrl=saved?.url||'';
+    box.innerHTML=Array.from({length:totalPages},(_,index)=>{
+      const page=index+1;
+      return '<button type="button" data-page="'+page+'" class="'+(page===currentPage?'active':'')+'">'+page+'</button>';
+    }).join('');
+
+    box.querySelectorAll('button').forEach(button=>button.onclick=function(){
+      currentPage=Number(button.dataset.page);
+      draw();
+      window.scrollTo({top:grid.offsetTop-90,behavior:'smooth'});
+    });
   }
 
-  // 기존 API 호출이 끝나 저장된 뒤 첫 페이지를 표시합니다.
-  window.addEventListener('load',function(){setTimeout(draw,500)});
-  window.addEventListener('movoka-cache-updated',function(){currentPage=1;setTimeout(draw,50)});
+  function schedule(){
+    clearTimeout(renderTimer);
+    renderTimer=setTimeout(draw,50);
+  }
+
+  window.addEventListener('load',schedule);
+  window.addEventListener('movoka-cache-updated',schedule);
+
+  const gridObserver=new MutationObserver(schedule);
+  window.addEventListener('DOMContentLoaded',function(){
+    const grid=document.getElementById('grid');
+    if(grid)gridObserver.observe(grid,{childList:true,subtree:false});
+    schedule();
+  });
 })();
 </script>`;
       html = html.replace('<footer>', paginationScript + '<footer>');
