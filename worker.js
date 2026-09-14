@@ -1,5 +1,5 @@
 // MOVOKA Cloudflare Worker
-// KOPIS 공연 데이터를 받아 브라우저에 저장하고, 저장된 목록을 12개씩 표시합니다.
+// KOPIS 공연 데이터를 받아 브라우저에 저장하고, 화면에서 12개씩 페이지로 나눕니다.
 
 const FETCH_ROWS = 100;
 
@@ -59,52 +59,62 @@ export default {
       html=html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi,'$1예매 사이트$3');
       html=html.replace(/>(예매|예매처 비교)<\/button>/g,'>예매 사이트</button>');
 
-      // 공연 API 응답을 한 번 가져오면 브라우저에 저장합니다.
+      // 공연 API 응답은 한 번 가져오면 브라우저에 저장합니다.
       const storageScript=`<script>(function(){const f=window.fetch;window.fetch=async function(i,n){const r=await f.call(this,i,n);try{const u=typeof i==='string'?i:(i&&i.url)||'';if(u.includes('/api/performances')){const d=await r.clone().text();localStorage.setItem('movoka-performances-cache',JSON.stringify({url:u,data:d,savedAt:Date.now()}));window.dispatchEvent(new Event('movoka-cache-updated'));}}catch(_){}return r;};})();</script>`;
       html=html.replace('</head>',storageScript+'</head>');
 
-      // 기존 renderItems가 전체 목록을 받을 때 그 목록을 저장하고,
-      // 화면에는 12개만 전달합니다. 페이지 이동은 API를 다시 호출하지 않습니다.
+      // 실제 화면에 렌더링된 공연 카드만 12개씩 나눕니다.
+      // 페이지 이동 시 API를 다시 호출하지 않고 현재 렌더링된 목록만 표시합니다.
       const paginationScript=`<style>
 #movoka-pagination{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;margin:-40px 0 70px}
 #movoka-pagination button{min-width:40px;height:40px;padding:0 11px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800}
 #movoka-pagination button.active{background:var(--primary);border-color:var(--primary);color:#fff}
 </style><div id="movoka-pagination"></div><script>
 (function(){
-const SIZE=12;
-let all=[];
-let page=1;
-let original=null;
-let ready=false;
-
-function pages(){return Math.ceil(all.length/SIZE)}
-function show(){
-  if(!original)return;
-  const total=pages();
-  if(page>total)page=total||1;
-  const start=(page-1)*SIZE;
-  original(all.slice(start,start+SIZE));
+  const SIZE=12;
+  let page=1;
+  let applying=false;
+  const grid=document.getElementById('grid');
   const box=document.getElementById('movoka-pagination');
-  if(!box)return;
-  if(total<=1){box.innerHTML='';return;}
-  box.innerHTML=Array.from({length:total},(_,i)=>{const p=i+1;return '<button type="button" data-page="'+p+'" class="'+(p===page?'active':'')+'">'+p+'</button>';}).join('');
-  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{page=Number(b.dataset.page);show();window.scrollTo({top:document.getElementById('grid').offsetTop-90,behavior:'smooth'});});
-}
-function install(){
-  if(ready)return true;
-  if(typeof window.renderItems!=='function')return false;
-  original=window.renderItems;
-  window.renderItems=function(items){
-    // API에서 새 전체 목록이 들어왔을 때만 전체 배열을 교체합니다.
-    if(!all.length || items.length!==all.length || items[0]?.mt20id!==all[0]?.mt20id){all=items.slice();page=1;}
-    show();
-  };
-  ready=true;
-  return true;
-}
-function boot(){if(!install())setTimeout(boot,50);}
-window.addEventListener('load',boot);
-setTimeout(boot,0);
+
+  // 현재 grid에 들어온 카드 수를 기준으로 페이지를 만듭니다.
+  function apply(){
+    if(!grid||!box||applying)return;
+    applying=true;
+    const cards=[...grid.querySelectorAll('.card')];
+    const total=Math.ceil(cards.length/SIZE);
+    if(page>total)page=total||1;
+
+    // 현재 페이지의 12개만 보이고 나머지는 숨깁니다.
+    cards.forEach((card,i)=>{
+      const start=(page-1)*SIZE;
+      card.style.display=(i>=start&&i<start+SIZE)?'':'none';
+    });
+
+    // 12개 이하라면 페이지 버튼을 표시하지 않습니다.
+    if(total<=1){box.innerHTML='';applying=false;return;}
+
+    box.innerHTML=Array.from({length:total},(_,i)=>{
+      const p=i+1;
+      return '<button type="button" data-page="'+p+'" class="'+(p===page?'active':'')+'">'+p+'</button>';
+    }).join('');
+
+    box.querySelectorAll('button').forEach(button=>button.onclick=()=>{
+      page=Number(button.dataset.page);
+      apply();
+      window.scrollTo({top:grid.offsetTop-90,behavior:'smooth'});
+    });
+    applying=false;
+  }
+
+  // load(), 검색, 카테고리 변경, 관심공연 변경으로 카드가 새로 그려질 때 자동으로 다시 페이지를 계산합니다.
+  if(grid){
+    new MutationObserver(()=>{
+      page=1;
+      apply();
+    }).observe(grid,{childList:true,subtree:true});
+    apply();
+  }
 })();
 </script>`;
       html=html.replace('<footer>',paginationScript+'<footer>');
