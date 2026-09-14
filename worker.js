@@ -1,6 +1,6 @@
 // MOVOKA Cloudflare Worker
 // KOPIS 공연 데이터를 서버에서 받아 프론트에 전달합니다.
-// 페이지네이션은 아직 적용하지 않고, 가져온 목록을 브라우저에 저장합니다.
+// 브라우저에 저장된 목록을 12개씩 나눠 표시합니다.
 
 const FETCH_ROWS = 100;
 
@@ -49,7 +49,6 @@ export default {
       api.searchParams.set('rows', String(FETCH_ROWS));
       api.searchParams.set('prfstate', '02');
 
-      // 선택한 카테고리/지역/검색어가 있을 때만 필터를 적용합니다.
       const genre = url.searchParams.get('shcate') || '';
       const area = url.searchParams.get('signgucode') || '';
       const keyword = url.searchParams.get('shprfnm') || '';
@@ -57,11 +56,9 @@ export default {
       if (area) api.searchParams.set('signgucode', area);
       if (keyword) api.searchParams.set('shprfnm', keyword);
 
-      // 전체 탭은 모든 카테고리를 하나의 KOPIS 목록으로 가져옵니다.
       return proxyKopis(api);
     }
 
-    // 공연 상세 API
     if (url.pathname === '/api/performance') {
       if (!key) return Response.json({ error: 'KOPIS_API_KEY is not configured' }, { status: 500 });
       const id = url.searchParams.get('mt20id');
@@ -75,34 +72,91 @@ export default {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
 
-      // 예매 버튼 문구를 통일합니다.
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
-      // 공연 목록 API 응답을 브라우저 localStorage에 저장합니다.
-      // 현재 단계에서는 기존 화면 동작은 건드리지 않고 '가져온 데이터 저장'만 합니다.
-      const storageScript = `
-<script>
+      // 공연 목록 API 응답은 기존처럼 localStorage에 저장합니다.
+      const storageScript = `<script>
 (function(){
-  const originalFetch = window.fetch;
-  window.fetch = async function(input, init){
-    const response = await originalFetch.call(this, input, init);
-    try {
-      const requestUrl = typeof input === 'string' ? input : (input && input.url) || '';
-      if (requestUrl.includes('/api/performances')) {
-        const body = await response.clone().text();
-        localStorage.setItem('movoka-performances-cache', JSON.stringify({
-          url: requestUrl,
-          data: body,
-          savedAt: Date.now()
-        }));
+  const originalFetch=window.fetch;
+  window.fetch=async function(input,init){
+    const response=await originalFetch.call(this,input,init);
+    try{
+      const requestUrl=typeof input==='string'?input:(input&&input.url)||'';
+      if(requestUrl.includes('/api/performances')){
+        const body=await response.clone().text();
+        localStorage.setItem('movoka-performances-cache',JSON.stringify({url:requestUrl,data:body,savedAt:Date.now()}));
+        window.dispatchEvent(new Event('movoka-cache-updated'));
       }
-    } catch (_) {}
+    }catch(_){}
     return response;
   };
 })();
 </script>`;
-      html = html.replace('</body>', storageScript + '</body>');
+      html = html.replace('</head>', storageScript + '</head>');
+
+      // 저장된 목록을 12개씩 나눕니다. 페이지를 누를 때 API를 다시 호출하지 않습니다.
+      const paginationScript = `<style>
+#movoka-pagination{display:flex;justify-content:center;align-items:center;gap:7px;flex-wrap:wrap;margin:-40px 0 70px}
+#movoka-pagination button{min-width:38px;height:38px;padding:0 10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800}
+#movoka-pagination button.active{background:var(--primary);border-color:var(--primary);color:#fff}
+</style><div id="movoka-pagination"></div><script>
+(function(){
+  const PAGE_SIZE=12;
+  let currentPage=1;
+  let lastCacheUrl='';
+
+  function getSaved(){
+    try{return JSON.parse(localStorage.getItem('movoka-performances-cache')||'null')}catch(_){return null}
+  }
+
+  function parseSaved(){
+    const saved=getSaved();
+    if(!saved?.data) return [];
+    try{
+      const doc=new DOMParser().parseFromString(saved.data,'text/xml');
+      return [...doc.querySelectorAll('db')].map(n=>Object.fromEntries(
+        ['mt20id','prfnm','prfpdfrom','prfpdto','fcltynm','poster','genrenm','prfcast','prfurl']
+          .map(k=>[k,n.querySelector(k)?.textContent||''])
+      ));
+    }catch(_){return []}
+  }
+
+  function draw(){
+    const saved=getSaved();
+    const items=parseSaved();
+    if(!items.length || typeof window.renderItems!=='function') return;
+
+    const totalPages=Math.ceil(items.length/PAGE_SIZE);
+    if(currentPage>totalPages) currentPage=totalPages;
+
+    // 저장된 전체 목록에서 현재 페이지의 12개만 잘라 기존 카드 렌더러에 전달합니다.
+    window.renderItems(items.slice((currentPage-1)*PAGE_SIZE,currentPage*PAGE_SIZE));
+
+    const box=document.getElementById('movoka-pagination');
+    if(!box) return;
+    if(totalPages<=1){box.innerHTML='';return}
+
+    box.innerHTML=Array.from({length:totalPages},(_,i)=>{
+      const p=i+1;
+      return '<button class="'+(p===currentPage?'active':'')+'" data-page="'+p+'">'+p+'</button>';
+    }).join('');
+
+    box.querySelectorAll('button').forEach(btn=>btn.onclick=function(){
+      currentPage=Number(btn.dataset.page);
+      draw();
+      window.scrollTo({top:document.getElementById('grid').offsetTop-90,behavior:'smooth'});
+    });
+
+    lastCacheUrl=saved?.url||'';
+  }
+
+  // 기존 API 호출이 끝나 저장된 뒤 첫 페이지를 표시합니다.
+  window.addEventListener('load',function(){setTimeout(draw,500)});
+  window.addEventListener('movoka-cache-updated',function(){currentPage=1;setTimeout(draw,50)});
+})();
+</script>`;
+      html = html.replace('<footer>', paginationScript + '<footer>');
 
       const headers = new Headers(asset.headers);
       headers.delete('Content-Length');
