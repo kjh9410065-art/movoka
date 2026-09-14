@@ -62,7 +62,10 @@ window.movokaLoadPage=loadPage;bind();loadPage(1);})();</script>`;
       html=html.replace('</body>',paginationScript+'</body>');
       const adScript=`<script>(function(){function refresh(){document.querySelectorAll('.ad-slot').forEach(function(s){s.classList.toggle('has-ad',!!s.querySelector('ins,iframe,img,a,[data-ad-loaded]'));});}refresh();new MutationObserver(refresh).observe(document.body,{childList:true,subtree:true});})();</script>`;
       html=html.replace('</body>',adScript+'</body>');
-      return new Response(html,{status:asset.status,headers:asset.headers});
+      // HTML을 수정했으므로 원본 ASSET의 Content-Length는 폐기하고 새 길이에 맞게 응답합니다.
+      const headers=new Headers(asset.headers);
+      headers.delete('Content-Length');
+      return new Response(html,{status:asset.status,headers});
     }
     return env.ASSETS.fetch(request);
   },
