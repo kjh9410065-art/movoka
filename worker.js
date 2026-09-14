@@ -1,5 +1,5 @@
 // MOVOKA Cloudflare Worker
-// KOPIS API를 서버에서 중계하고, 메인 화면에 페이지 번호를 추가합니다.
+// KOPIS API를 서버에서 중계하고, 메인 화면에 반응형 페이지네이션을 추가합니다.
 
 const PAGE_SIZE = 10;
 
@@ -21,7 +21,7 @@ export default {
     const url = new URL(request.url);
     const key = env.KOPIS_API_KEY;
 
-    // 공연 목록 API: 페이지 번호와 필터를 그대로 KOPIS에 전달합니다.
+    // 공연 목록 API: 페이지 번호와 필터를 KOPIS에 전달합니다.
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({ error: 'KOPIS_API_KEY is not configured' }, { status: 500 });
 
@@ -68,23 +68,24 @@ export default {
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
-      // 페이지 번호가 항상 보이도록 CSS를 주입합니다.
+      // PC는 10개, 모바일은 5개의 번호가 화면 너비에 맞게 보이도록 구성합니다.
       const paginationCss = `<style>
-.pagination{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;width:100%;margin:28px 0 50px;padding:0 0 10px}
-.pagination button{min-width:40px;height:40px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800;padding:0 12px}
+.pagination{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:nowrap;width:100%;margin:28px 0 50px;padding:0 8px 10px;overflow:hidden}
+.pagination-pages{display:flex;justify-content:center;align-items:center;gap:8px;min-width:0;overflow:hidden}
+.pagination button{flex:0 0 auto;min-width:40px;height:40px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800;padding:0 12px}
 .pagination button.active{background:var(--primary);border-color:var(--primary);color:#fff}
 .pagination button:disabled{opacity:.4;cursor:default}
 .pagination button.nav{font-size:12px}
-@media(max-width:480px){.pagination{gap:6px;margin:28px 0 35px}.pagination button{min-width:36px;height:36px;padding:0 8px}.pagination button.nav{padding:0 10px}}
+@media(max-width:480px){.pagination{gap:4px;margin:24px 0 35px;padding-left:0;padding-right:0}.pagination-pages{gap:4px}.pagination button{min-width:34px;width:34px;height:36px;padding:0;font-size:13px;border-radius:9px}.pagination button.nav{min-width:48px;width:auto;padding:0 8px;font-size:11px}}
 </style>`;
       html = html.replace('</head>', paginationCss + '</head>');
 
       // footer 바로 앞에 페이지 번호 영역을 넣습니다.
       html = html.replace('<footer>', '<div class="pagination" id="pagination" aria-label="공연 목록 페이지 이동"></div><footer>');
 
-      // 기존 페이지 스크립트가 먼저 실행된 다음 페이지네이션을 연결합니다.
       const paginationScript = `<script>
 (function(){
+  // 현재 선택된 장르·지역·검색어를 읽습니다.
   function filters(){
     var chip=document.querySelector('.chip.active');
     return {
@@ -94,17 +95,30 @@ export default {
     };
   }
 
-  function renderPagination(page, hasNext){
+  // PC는 10페이지 단위, 모바일은 5페이지 단위로 번호를 묶습니다.
+  // 예: PC 1~10 → 11~20, 모바일 1~5 → 6~10.
+  function renderPagination(page,totalPages){
     var el=document.querySelector('#pagination');
     if(!el) return;
+    if(totalPages<=1){el.innerHTML='';return;}
+
+    var mobile=window.innerWidth<=480;
+    var groupSize=mobile?5:10;
+    var start=Math.floor((page-1)/groupSize)*groupSize+1;
+    var end=Math.min(totalPages,start+groupSize-1);
     var out=[];
+
+    // 이전/다음은 현재 페이지를 한 페이지씩 이동합니다.
     out.push('<button class="nav" '+(page<=1?'disabled':'')+' data-page="'+(page-1)+'">‹ 이전</button>');
-    // KOPIS 목록 API가 전체 건수를 제공하지 않는 경우에도 1~10 페이지를 바로 선택할 수 있게 합니다.
-    for(var i=1;i<=10;i++){
+    out.push('<div class="pagination-pages">');
+    for(var i=start;i<=end;i++){
       out.push('<button class="'+(i===page?'active':'')+'" data-page="'+i+'">'+i+'</button>');
     }
-    out.push('<button class="nav" '+(!hasNext?'disabled':'')+' data-page="'+(page+1)+'">다음 ›</button>');
+    out.push('</div>');
+    out.push('<button class="nav" '+(page>=totalPages?'disabled':'')+' data-page="'+(page+1)+'">다음 ›</button>');
+
     el.innerHTML=out.join('');
+    el.dataset.pages=String(totalPages);
     el.querySelectorAll('[data-page]').forEach(function(button){
       button.onclick=function(){
         if(!button.disabled) loadPage(Number(button.dataset.page));
@@ -117,6 +131,7 @@ export default {
     var grid=document.querySelector('#grid');
     if(!grid) return;
     grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
+
     var f=filters();
     var params=new URLSearchParams({rows:'10',cpage:String(page)});
     if(f.genre) params.set('shcate',f.genre);
@@ -127,9 +142,9 @@ export default {
       .then(function(response){if(!response.ok) throw new Error(); return response.text();})
       .then(function(xml){
         var doc=new DOMParser().parseFromString(xml,'text/xml');
-        var dbs=doc.querySelectorAll('db');
+        var nodes=doc.querySelectorAll('db');
         var items=[];
-        dbs.forEach(function(node){
+        nodes.forEach(function(node){
           items.push({
             mt20id: node.querySelector('mt20id')?.textContent || '',
             prfnm: node.querySelector('prfnm')?.textContent || '',
@@ -142,11 +157,18 @@ export default {
             prfurl: node.querySelector('prfurl')?.textContent || ''
           });
         });
+
+        // KOPIS가 전체 건수를 보내면 정확한 전체 페이지 수를 계산합니다.
+        // totalcount가 없는 경우에는 현재 페이지에 10개가 있으면 다음 페이지가 있다고 판단합니다.
+        var total=Number(doc.querySelector('totalcount')?.textContent || 0);
+        var totalPages=total ? Math.ceil(total/PAGE_SIZE) : (items.length===PAGE_SIZE ? page+1 : page);
+
         // 기존 index.html의 카드 렌더러를 재사용합니다.
         if(typeof lastItems !== 'undefined') lastItems=items;
         if(typeof renderItems === 'function') renderItems(items);
-        else grid.innerHTML='<div class="empty">공연 정보를 표시하지 못했습니다.</div>';
-        renderPagination(page, items.length === 10);
+        else grid.innerHTML='<div class="empty">공연을 표시하지 못했습니다.</div>';
+
+        renderPagination(page,totalPages);
         window.scrollTo({top:0,behavior:'smooth'});
       })
       .catch(function(){
@@ -156,10 +178,9 @@ export default {
       });
   }
 
-  // 외부에서 페이지 이동을 호출할 수 있도록 공개합니다.
   window.movokaLoadPage=loadPage;
 
-  // 원본 페이지의 초기 로딩이 끝난 뒤 페이지네이션을 표시합니다.
+  // 화면이 준비되면 1페이지를 로드합니다.
   window.addEventListener('load',function(){setTimeout(function(){loadPage(1);},50);});
 })();
 </script>`;
@@ -174,6 +195,6 @@ export default {
     return env.ASSETS.fetch(request);
   },
 
-  // Cron은 현재 별도 데이터 스냅샷을 사용하지 않으므로 요청만 성공적으로 처리합니다.
+  // Cron 트리거가 있어도 페이지 데이터는 사용자의 요청 시 KOPIS에서 최신 조회합니다.
   async scheduled() {}
 };
