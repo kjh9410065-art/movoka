@@ -3,6 +3,7 @@
 
 const SNAPSHOT_PREFIX = 'https://movoka-cache.local/api/performances/snapshot/';
 const SNAPSHOT_TTL_DAYS = 7;
+const PAGE_SIZE = 10;
 
 function snapshotKey(date) { return `${SNAPSHOT_PREFIX}${date}`; }
 function dateStamp(date) {
@@ -25,13 +26,13 @@ export default {
       const endDate = url.searchParams.get('eddate') || ymd(endObj);
       const page = Math.max(1,Number(url.searchParams.get('cpage')||1));
       const ticketable = url.searchParams.get('ticketable') === '1';
-      const requestedRows = Math.min(100,Math.max(1,Number(url.searchParams.get('rows')||100)));
-      const rows = ticketable ? Math.min(30,requestedRows) : requestedRows;
+      const requestedRows = Math.min(100,Math.max(1,Number(url.searchParams.get('rows')||PAGE_SIZE)));
+      const rows = ticketable ? Math.min(PAGE_SIZE,requestedRows) : requestedRows;
       const genre = url.searchParams.get('shcate') || '';
       const area = url.searchParams.get('signgucodesub') || url.searchParams.get('signgucode') || '';
       const keyword = url.searchParams.get('shprfnm') || '';
 
-      const isDefault = !genre&&!area&&!keyword&&page===1&&ticketable&&rows<=30&&!url.searchParams.has('stdate')&&!url.searchParams.has('eddate');
+      const isDefault = !genre&&!area&&!keyword&&page===1&&ticketable&&rows<=PAGE_SIZE&&!url.searchParams.has('stdate')&&!url.searchParams.has('eddate');
       if (isDefault) { const latest=await findLatestSnapshot(); if(latest)return latest; }
 
       const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
@@ -53,15 +54,13 @@ export default {
       const asset=await env.ASSETS.fetch(request); let html=await asset.text();
       html=html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi,'$1예매 사이트$3');
       html=html.replace(/>(예매|예매처 비교)<\/button>/g,'>예매 사이트</button>');
-      html=html.replace("new URLSearchParams({rows:'100'})","new URLSearchParams({rows:'30',ticketable:'1'})");
+      html=html.replace("new URLSearchParams({rows:'100'})",`new URLSearchParams({rows:'${PAGE_SIZE}',ticketable:'1'})`);
       html=html.replace('</style></head>','.ad-slot{display:none;width:100%;min-height:90px;margin:0 0 24px;align-items:center;justify-content:center;overflow:hidden}.ad-slot.has-ad{display:flex}.ad-slot ins,.ad-slot iframe{max-width:100%;display:block}.pagination{display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;width:100%;margin:0 0 50px;padding:0 0 10px}.pagination button{min-width:40px;height:40px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;cursor:pointer;font-weight:800}.pagination button.active{background:var(--primary);border-color:var(--primary);color:#fff}.pagination button:disabled{opacity:.4;cursor:default}@media(max-width:480px){.ad-slot{min-height:60px;margin-bottom:18px}.pagination{gap:6px;margin-bottom:35px}.pagination button{min-width:36px;height:36px}}'+ '</style></head>');
       html=html.replace('<div class="toolbar">','<div class="ad-slot" id="ad-top" data-ad-slot="top" aria-label="광고"></div><div class="toolbar">');
       html=html.replace('<footer>','<div class="ad-slot" id="ad-bottom" data-ad-slot="bottom" aria-label="광고"></div><footer>');
-      // 광고가 삽입된 경우에만 슬롯을 표시합니다.
       html=html.replace('</script></body>','<script>(function(){function refresh(){document.querySelectorAll(".ad-slot").forEach(function(s){s.classList.toggle("has-ad",!!s.querySelector("ins,iframe,img,a,[data-ad-loaded]"));});}refresh();new MutationObserver(refresh).observe(document.body,{childList:true,subtree:true});})();</script></body>');
-      // 공연 목록 바로 아래에 페이지 번호 영역을 고정으로 배치합니다.
       html=html.replace('</section></main>','</section><div class="pagination" id="pagination" aria-label="공연 목록 페이지 이동"></div></main>');
-      const paginationScript='<script>(function(){var currentPage=1;function loadPage(page){currentPage=Math.max(1,page);var grid=document.querySelector("#grid"),count=document.querySelector("#count"),pagination=document.querySelector("#pagination");if(!grid)return;grid.innerHTML="<div class=\\"empty\\">공연 정보를 불러오는 중입니다.</div>";var p=new URLSearchParams({rows:"30",ticketable:"1",cpage:String(currentPage)});var active=Array.from(document.querySelectorAll(".chip")).find(function(b){return b.classList.contains("active")});var genre=active?active.dataset.id:"",area=document.querySelector("#area")?.value||"",keyword=document.querySelector("#q")?.value.trim()||"";if(genre)p.set("shcate",genre);if(area)p.set("signgucodesub",area);if(keyword)p.set("shprfnm",keyword);fetch("/api/performances?"+p.toString()).then(function(r){if(!r.ok)throw new Error();return r.text()}).then(function(xml){var items=typeof parse==="function"?parse(xml):[];if(typeof lastItems!=="undefined")lastItems=items;if(typeof renderItems==="function")renderItems(items);var doc=new DOMParser().parseFromString(xml,"text/xml"),total=Number(doc.querySelector("totalcount")?.textContent||0),pages=total?Math.max(1,Math.ceil(total/30)):(items.length===30?currentPage+1:currentPage);renderPagination(pages);if(count&&total)count.textContent="공연 "+total.toLocaleString()+"개";}).catch(function(){if(count)count.textContent="";grid.innerHTML="<div class=\\"empty\\">공연 정보를 불러오지 못했습니다.</div>";if(pagination)pagination.innerHTML="";});}function renderPagination(totalPages){var el=document.querySelector("#pagination");if(!el)return;if(totalPages<=1){el.innerHTML="";return;}var start=Math.max(1,Math.floor((currentPage-1)/10)*10+1),end=Math.min(totalPages,start+9),out=[];out.push("<button "+(currentPage===1?"disabled":"")+" data-page=\\""+(currentPage-1)+"\\">‹</button>");for(var i=start;i<=end;i++)out.push("<button class=\\""+(i===currentPage?"active":"")+"\\" data-page=\\""+i+"\\">"+i+"</button>");out.push("<button "+(currentPage===totalPages?"disabled":"")+" data-page=\\""+(currentPage+1)+"\\">›</button>");el.innerHTML=out.join("");el.querySelectorAll("button[data-page]").forEach(function(b){b.onclick=function(){if(!b.disabled)loadPage(Number(b.dataset.page));};});}window.movokaLoadPage=loadPage;loadPage(1);})();</script></body>';
+      const paginationScript='<script>(function(){var currentPage=1;function loadPage(page){currentPage=Math.max(1,page);var grid=document.querySelector("#grid"),count=document.querySelector("#count"),pagination=document.querySelector("#pagination");if(!grid)return;grid.innerHTML="<div class=\\"empty\\">공연 정보를 불러오는 중입니다.</div>";var p=new URLSearchParams({rows:"10",ticketable:"1",cpage:String(currentPage)});var active=Array.from(document.querySelectorAll(".chip")).find(function(b){return b.classList.contains("active")});var genre=active?active.dataset.id:"",area=document.querySelector("#area")?.value||"",keyword=document.querySelector("#q")?.value.trim()||"";if(genre)p.set("shcate",genre);if(area)p.set("signgucodesub",area);if(keyword)p.set("shprfnm",keyword);fetch("/api/performances?"+p.toString()).then(function(r){if(!r.ok)throw new Error();return r.text()}).then(function(xml){var items=typeof parse==="function"?parse(xml):[];if(typeof lastItems!=="undefined")lastItems=items;if(typeof renderItems==="function")renderItems(items);var doc=new DOMParser().parseFromString(xml,"text/xml"),total=Number(doc.querySelector("totalcount")?.textContent||0),pages=total?Math.max(1,Math.ceil(total/10)):(items.length===10?currentPage+1:currentPage);renderPagination(pages);if(count&&total)count.textContent="공연 "+total.toLocaleString()+"개";}).catch(function(){if(count)count.textContent="";grid.innerHTML="<div class=\\"empty\\">공연 정보를 불러오지 못했습니다.</div>";if(pagination)pagination.innerHTML="";});}function renderPagination(totalPages){var el=document.querySelector("#pagination");if(!el)return;if(totalPages<=1){el.innerHTML="";return;}var start=Math.max(1,Math.floor((currentPage-1)/10)*10+1),end=Math.min(totalPages,start+9),out=[];out.push("<button "+(currentPage===1?"disabled":"")+" data-page=\\""+(currentPage-1)+"\\">‹</button>");for(var i=start;i<=end;i++)out.push("<button class=\\""+(i===currentPage?"active":"")+"\\" data-page=\\""+i+"\\">"+i+"</button>");out.push("<button "+(currentPage===totalPages?"disabled":"")+" data-page=\\""+(currentPage+1)+"\\">›</button>");el.innerHTML=out.join("");el.querySelectorAll("button[data-page]").forEach(function(b){b.onclick=function(){if(!b.disabled)loadPage(Number(b.dataset.page));};});}window.movokaLoadPage=loadPage;loadPage(1);})();</script></body>';
       html=html.replace('</script></body>',paginationScript);
       return new Response(html,{status:asset.status,headers:asset.headers});
     }
@@ -72,7 +71,7 @@ export default {
     if(!env.KOPIS_API_KEY)return;
     const now=new Date(),pad=n=>String(n).padStart(2,'0'),ymd=d=>`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
     const end=new Date(now);end.setDate(end.getDate()+30);
-    const api=new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');api.searchParams.set('service',env.KOPIS_API_KEY);api.searchParams.set('stdate',ymd(now));api.searchParams.set('eddate',ymd(end));api.searchParams.set('cpage','1');api.searchParams.set('rows','30');api.searchParams.set('prfstate','02');
+    const api=new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');api.searchParams.set('service',env.KOPIS_API_KEY);api.searchParams.set('stdate',ymd(now));api.searchParams.set('eddate',ymd(end));api.searchParams.set('cpage','1');api.searchParams.set('rows',String(PAGE_SIZE));api.searchParams.set('prfstate','02');
     ctx.waitUntil(refreshSnapshot(api,env.KOPIS_API_KEY,now));
   }
 };
