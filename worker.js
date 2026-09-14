@@ -1,7 +1,7 @@
 // MOVOKA Cloudflare Worker
 // KOPIS API 요청은 서버에서 처리하고, 기본 공연 목록은 하루 한 번 캐시로 갱신합니다.
 
-const SNAPSHOT_PREFIX = 'https://movoka-cache.local/api/performances/snapshot/';
+const SNAPSHOT_PREFIX = 'https://movoka-cache.local/v2/performances/snapshot/';
 const SNAPSHOT_TTL_DAYS = 7;
 const PAGE_SIZE = 30;
 
