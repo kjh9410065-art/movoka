@@ -9,18 +9,29 @@ function getYmd(date) {
 }
 
 async function proxyKopis(api) {
-  try {
-    const response = await fetch(api.toString());
-    if (!response.ok) throw new Error(`KOPIS HTTP ${response.status}`);
-    return new Response(await response.text(), {
-      headers: {
-        'Content-Type': 'application/xml; charset=utf-8',
-        'Cache-Control': 'no-store'
-      }
-    });
-  } catch (_) {
-    return Response.json({error:'KOPIS request failed'}, {status:502});
+  const response = await fetch(api.toString());
+  if (!response.ok) throw new Error(`KOPIS HTTP ${response.status}`);
+  return response.text();
+}
+
+async function getAllPerformances(baseApi) {
+  const all = [];
+
+  // KOPIS는 한 번에 최대 100개이므로, 다음 페이지가 없을 때까지 계속 가져옵니다.
+  for (let page = 1; page <= 100; page++) {
+    const api = new URL(baseApi.toString());
+    api.searchParams.set('cpage', String(page));
+    api.searchParams.set('rows', String(FETCH_ROWS));
+
+    const xml = await proxyKopis(api);
+    const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
+    all.push(...matches);
+
+    // 100개보다 적으면 마지막 페이지입니다.
+    if (matches.length < FETCH_ROWS) break;
   }
+
+  return `<dbs>${all.join('')}</dbs>`;
 }
 
 export default {
@@ -31,26 +42,35 @@ export default {
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
 
-      const now = new Date();
-      const end = new Date(now);
-      end.setDate(end.getDate() + 30);
+      try {
+        const now = new Date();
+        const end = new Date(now);
+        end.setDate(end.getDate() + 30);
 
-      const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
-      api.searchParams.set('service', key);
-      api.searchParams.set('stdate', url.searchParams.get('stdate') || getYmd(now));
-      api.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
-      api.searchParams.set('cpage', '1');
-      api.searchParams.set('rows', String(FETCH_ROWS));
-      api.searchParams.set('prfstate', '02');
+        const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
+        api.searchParams.set('service', key);
+        api.searchParams.set('stdate', url.searchParams.get('stdate') || getYmd(now));
+        api.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
+        api.searchParams.set('prfstate', '02');
 
-      const genre = url.searchParams.get('shcate') || '';
-      const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || '';
-      const keyword = url.searchParams.get('shprfnm') || '';
-      if (genre) api.searchParams.set('shcate', genre);
-      if (area) api.searchParams.set('signgucode', area);
-      if (keyword) api.searchParams.set('shprfnm', keyword);
+        const genre = url.searchParams.get('shcate') || '';
+        const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || '';
+        const keyword = url.searchParams.get('shprfnm') || '';
+        if (genre) api.searchParams.set('shcate', genre);
+        if (area) api.searchParams.set('signgucode', area);
+        if (keyword) api.searchParams.set('shprfnm', keyword);
 
-      return proxyKopis(api);
+        // 조건에 맞는 예매 가능 공연을 페이지 끝까지 모두 가져옵니다.
+        const xml = await getAllPerformances(api);
+        return new Response(xml, {
+          headers: {
+            'Content-Type': 'application/xml; charset=utf-8',
+            'Cache-Control': 'no-store'
+          }
+        });
+      } catch (_) {
+        return Response.json({error:'KOPIS request failed'}, {status:502});
+      }
     }
 
     if (url.pathname === '/api/performance') {
@@ -58,9 +78,19 @@ export default {
       const id = url.searchParams.get('mt20id');
       if (!id || !/^PF\d+$/.test(id)) return Response.json({error:'Invalid mt20id'}, {status:400});
 
-      const api = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
-      api.searchParams.set('service', key);
-      return proxyKopis(api);
+      try {
+        const api = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
+        api.searchParams.set('service', key);
+        const xml = await proxyKopis(api);
+        return new Response(xml, {
+          headers: {
+            'Content-Type': 'application/xml; charset=utf-8',
+            'Cache-Control': 'no-store'
+          }
+        });
+      } catch (_) {
+        return Response.json({error:'KOPIS request failed'}, {status:502});
+      }
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
