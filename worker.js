@@ -13,7 +13,8 @@ function getYmd(date) {
 }
 
 async function proxyKopis(api) {
-  const response = await fetch(api.toString());
+  // KOPIS 공식 canonical host를 직접 호출합니다. www 호스트의 리다이렉트 문제를 피합니다.
+  const response = await fetch(api.toString(), { redirect: 'follow' });
   if (!response.ok) throw new Error(`KOPIS HTTP ${response.status}`);
   return response.text();
 }
@@ -76,7 +77,7 @@ async function putCachedText(url, text, ttl) {
 
 async function hasTicketVendor(id, key) {
   // 공연 상세정보에서 KOPIS에 등록된 예매처 URL(relateurl)을 확인합니다.
-  const api = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
+  const api = new URL(`https://kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
   api.searchParams.set('service', key);
   const apiUrl = api.toString();
 
@@ -95,7 +96,7 @@ async function hasTicketVendor(id, key) {
 }
 
 async function getTicketStatuses(ids, key) {
-  // 한 Worker 요청에서는 최대 20개 공연만 확인해 Cloudflare의 외부 요청 한도를 넘지 않게 합니다.
+  // 한 Worker 요청에서는 최대 20개 공연만 확인해 외부 요청 수를 제한합니다.
   const uniqueIds = [...new Set(ids)].filter(id => /^PF\d+$/.test(id)).slice(0, TICKET_BATCH_SIZE);
   const statuses = {};
   let next = 0;
@@ -128,7 +129,7 @@ export default {
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
 
       // 목록 자체는 예매처 상세조회와 분리해 100개 초과 공연도 끝까지 수집합니다.
-      const listCacheKey = `v4:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      const listCacheKey = `v5:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const cachedList = await caches.default.match(cacheRequest(listCacheKey));
       if (cachedList) return cachedList;
 
@@ -137,7 +138,8 @@ export default {
         const end = new Date(now);
         end.setDate(end.getDate() + 30);
 
-        const baseApi = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
+        // KOPIS 공식 canonical host를 사용합니다.
+        const baseApi = new URL('https://kopis.or.kr/openApi/restful/pblprfr');
         baseApi.searchParams.set('service', key);
         baseApi.searchParams.set('stdate', url.searchParams.get('stdate') || getYmd(now));
         baseApi.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
@@ -161,7 +163,7 @@ export default {
           }
         }
 
-        // 예매처 상세조회는 별도 배치 API에서 처리하므로 여기서는 전체 공연을 그대로 반환합니다.
+        // 예매처 상세조회는 별도 배치 API에서 처리하므로 목록 요청에서는 전체 공연을 반환합니다.
         const xml = `<dbs>${Array.from(merged.values()).join('')}</dbs>`;
         const response = new Response(xml, {
           headers: {
@@ -203,7 +205,7 @@ export default {
       if (!id || !/^PF\d+$/.test(id)) return Response.json({error:'Invalid mt20id'}, {status:400});
 
       try {
-        const api = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
+        const api = new URL(`https://kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
         api.searchParams.set('service', key);
         const apiUrl = api.toString();
         const cachedXml = await getCachedText(apiUrl);
@@ -231,7 +233,7 @@ export default {
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
       // 목록은 전부 가져온 뒤 브라우저가 20개씩 예매처 상태를 확인합니다.
-      // 이렇게 해야 100개를 넘는 공연도 Cloudflare Worker의 단일 요청 한도를 넘지 않습니다.
+      // 이렇게 해야 100개를 넘는 공연도 단일 Worker 요청 한도를 넘지 않습니다.
       const ticketLoader = `
 async function loadWithTicketFilter(){
   grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
@@ -270,7 +272,8 @@ async function loadWithTicketFilter(){
       for(const item of all.filter(x=>batch.includes(x.mt20id))){if(statuses[item.mt20id]===true)bookable.push(item)}
       count.textContent='예매 가능한 공연 확인 중... '+Math.min(i+20,ids.length)+' / '+ids.length;
     }
-    localStorage.setItem(bookableKey,JSON.stringify({data:'<dbs>'+bookable.map(x=>'<db><mt20id>'+x.mt20id+'</mt20id><prfnm>'+esc(x.prfnm)+'</prfnm><prfpdfrom>'+esc(x.prfpdfrom)+'</prfpdfrom><prfpdto>'+esc(x.prfpdto)+'</prfpdto><fcltynm>'+esc(x.fcltynm)+'</fcltynm><poster>'+esc(x.poster)+'</poster><genrenm>'+esc(x.genrenm)+'</genrenm><prfcast>'+esc(x.prfcast)+'</prfcast><prfurl>'+esc(x.prfurl)+'</prfurl></db>').join('')+'</dbs>',savedAt:Date.now()}));
+    const bookableXml='<dbs>'+bookable.map(x=>'<db><mt20id>'+esc(x.mt20id)+'</mt20id><prfnm>'+esc(x.prfnm)+'</prfnm><prfpdfrom>'+esc(x.prfpdfrom)+'</prfpdfrom><prfpdto>'+esc(x.prfpdto)+'</prfpdto><fcltynm>'+esc(x.fcltynm)+'</fcltynm><poster>'+esc(x.poster)+'</poster><genrenm>'+esc(x.genrenm)+'</genrenm><prfcast>'+esc(x.prfcast)+'</prfcast><prfurl>'+esc(x.prfurl)+'</prfurl></db>').join('')+'</dbs>';
+    localStorage.setItem(bookableKey,JSON.stringify({data:bookableXml,savedAt:Date.now()}));
     currentPage=1;renderItems(bookable);
   }catch(e){count.textContent='';grid.innerHTML='<div class="empty">공연 정보를 불러오지 못했습니다.</div>';$('#movoka-pagination').innerHTML=''}finally{$('#go').disabled=false}
 }
