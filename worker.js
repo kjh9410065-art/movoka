@@ -68,7 +68,7 @@ function baseApi(url, key) {
 }
 
 async function firstPage(api) {
-  // 초기 화면은 상태를 두 번 조회하지 않고 한 번의 목록 요청으로 가져옵니다.
+  // 초기 화면은 한 번의 KOPIS 목록 요청으로 가져옵니다.
   api = new URL(api.toString());
   api.searchParams.set('cpage', '1');
   api.searchParams.set('rows', String(ROWS));
@@ -166,7 +166,7 @@ export default {
     }
 
     if (url.pathname === '/api/performances/first') {
-      // 초기 화면은 단 한 번의 KOPIS 목록 요청으로 빠르게 반환합니다.
+      // 초기 화면은 한 번의 KOPIS 목록 요청으로 빠르게 반환합니다.
       const keyUrl = `first-v2:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const hit = await caches.default.match(cacheKey(keyUrl));
       if (hit) return hit;
@@ -278,6 +278,9 @@ async function loadWithTicketFilter(){
     .catch(()=>{})
     .finally(()=>{$('#go').disabled=false;});
 }
+
+// 페이지가 로드되면 공연 목록 조회를 자동으로 시작합니다.
+loadWithTicketFilter();
 `;
       html = html.replace('</script>', loader + '</script>');
       const headers = new Headers(asset.headers);
