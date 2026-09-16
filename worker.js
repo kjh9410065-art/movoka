@@ -2,6 +2,7 @@
 // KOPIS 공연 API를 중계하고 초기 화면을 빠르게 표시합니다.
 
 const ROWS = 100; // KOPIS가 허용하는 페이지당 최대 공연 수입니다.
+const FIRST_ROWS = 28; // 첫 화면에는 실제 표시량만 받아 초기 응답을 줄입니다.
 const LIST_CACHE_TTL = 900; // 전체 목록 캐시 시간은 15분입니다.
 const DETAIL_CACHE_TTL = 86400; // 상세 공연 캐시는 24시간입니다.
 const PAGE_CONCURRENCY = 8; // 전체 목록을 가져올 때 동시에 조회할 페이지 수입니다.
@@ -67,11 +68,11 @@ function baseApi(url, key) {
   return api;
 }
 
-async function firstPage(api) {
-  // 초기 화면은 한 번의 KOPIS 목록 요청으로 가져옵니다.
+async function firstPage(api, rows = FIRST_ROWS) {
+  // 첫 화면은 필요한 공연 수만 한 번에 받아 응답 크기와 대기시간을 줄입니다.
   api = new URL(api.toString());
   api.searchParams.set('cpage', '1');
-  api.searchParams.set('rows', String(ROWS));
+  api.searchParams.set('rows', String(Math.min(FIRST_ROWS, Math.max(1, Number(rows) || FIRST_ROWS))));
   return kopis(api);
 }
 
@@ -166,12 +167,12 @@ export default {
     }
 
     if (url.pathname === '/api/performances/first') {
-      // 초기 화면은 한 번의 KOPIS 목록 요청으로 빠르게 반환합니다.
-      const keyUrl = `first-v2:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      // 첫 화면은 28개만 요청해 KOPIS 응답을 최대한 작게 만듭니다.
+      const keyUrl = `first-v3:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const hit = await caches.default.match(cacheKey(keyUrl));
       if (hit) return hit;
       try {
-        const xml = await firstPage(baseApi(url, key));
+        const xml = await firstPage(baseApi(url, key), FIRST_ROWS);
         const response = new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300'}});
         await caches.default.put(cacheKey(keyUrl), response.clone());
         return response;
@@ -231,11 +232,11 @@ export default {
 async function loadWithTicketFilter(){
   $('#go').disabled=true;
   grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
-  const p=new URLSearchParams({rows:'100'});
+  const p=new URLSearchParams({rows:'28'});
   if(active)p.set('shcate',active);
   if($('#area').value)p.set('shigucodesub',$('#area').value);
   if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
-  const firstKey='movoka-first-list-v2:'+p.toString();
+  const firstKey='movoka-first-list-v3:'+p.toString();
   const fullKey='movoka-full-list-v2:'+p.toString();
   const apply=xml=>{currentPage=1;renderItems(parse(xml));};
 
@@ -256,7 +257,7 @@ async function loadWithTicketFilter(){
     }
   }catch(_){localStorage.removeItem(firstKey);}
 
-  // 첫 페이지는 최대 8초만 기다려 초기 화면이 장시간 멈추지 않게 합니다.
+  // 첫 화면은 28개만 받아 8초 이상 초기 화면이 기다리지 않게 합니다.
   try{
     const response=await fetchWithTimeout('/api/performances/first?'+p.toString(),8000);
     if(response.ok){
