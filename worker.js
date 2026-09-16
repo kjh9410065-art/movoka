@@ -1,7 +1,7 @@
 // MOVOKA Cloudflare Worker
 // KOPIS 공연 API를 브라우저에서 사용할 수 있도록 중계합니다.
 
-const FETCH_ROWS = 100;
+const KOPIS_PAGE_ROWS = 100;
 
 function getYmd(date) {
   const pad = n => String(n).padStart(2, '0');
@@ -18,18 +18,18 @@ async function getAllPerformances(baseApi) {
   const all = [];
   let page = 1;
 
-  // 공연 수에 인위적인 상한을 두지 않고 KOPIS의 마지막 페이지까지 모두 가져옵니다.
+  // KOPIS의 페이지 단위만 100개로 요청하고, 전체 공연 수에는 제한을 두지 않습니다.
   while (true) {
     const api = new URL(baseApi.toString());
     api.searchParams.set('cpage', String(page));
-    api.searchParams.set('rows', String(FETCH_ROWS));
+    api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
 
     const xml = await proxyKopis(api);
     const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
     all.push(...matches);
 
-    // 현재 페이지가 100개보다 적으면 KOPIS의 마지막 페이지입니다.
-    if (matches.length < FETCH_ROWS) break;
+    // 100개보다 적으면 마지막 페이지입니다.
+    if (matches.length < KOPIS_PAGE_ROWS) break;
     page++;
   }
 
@@ -62,7 +62,7 @@ export default {
         if (area) api.searchParams.set('signgucode', area);
         if (keyword) api.searchParams.set('shprfnm', keyword);
 
-        // 조건에 맞는 예매 가능 공연을 페이지 끝까지 모두 가져옵니다.
+        // 조건에 맞는 예매 가능 공연을 마지막 페이지까지 모두 가져옵니다.
         const xml = await getAllPerformances(api);
         return new Response(xml, {
           headers: {
@@ -99,7 +99,8 @@ export default {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
 
-      // 예매 버튼 문구만 통일하고, 페이지네이션은 index.html의 실제 데이터에서 처리합니다.
+      // 이전 100개 캐시를 사용하지 않도록 새 캐시 버전을 적용합니다.
+      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v2:');
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
