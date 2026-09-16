@@ -1,7 +1,7 @@
 // MOVOKA Cloudflare Worker
 // KOPIS 공연 API를 중계하고 초기 화면을 빠르게 표시합니다.
 
-const ROWS = 100; // KOPIS가 허용하는 페이지당 최대 공연 수입니다.
+const ROWS = 100; // KOPIS 전체 목록 조회에 사용하는 최대 페이지 크기입니다.
 const FIRST_ROWS = 28; // 첫 화면에는 실제 표시량만 받아 초기 응답을 줄입니다.
 const LIST_CACHE_TTL = 900; // 전체 목록 캐시 시간은 15분입니다.
 const DETAIL_CACHE_TTL = 86400; // 상세 공연 캐시는 24시간입니다.
@@ -80,18 +80,13 @@ async function allPages(api) {
   // 전체 목록을 100개 단위로 끝 페이지까지 수집합니다.
   const all = [];
   const seen = new Set();
-
   const add = items => {
     // 공연 ID를 기준으로 중복을 제거합니다.
     for (const db of items) {
       const id = idOf(db);
-      if (id && !seen.has(id)) {
-        seen.add(id);
-        all.push(db);
-      }
+      if (id && !seen.has(id)) { seen.add(id); all.push(db); }
     }
   };
-
   const getPage = async page => {
     // 지정한 페이지를 KOPIS에서 조회합니다.
     const request = new URL(api.toString());
@@ -99,20 +94,15 @@ async function allPages(api) {
     request.searchParams.set('rows', String(ROWS));
     return dbs(await kopis(request));
   };
-
   const first = await getPage(1);
   add(first);
   if (first.length < ROWS) return all;
-
-  // 마지막 페이지가 나올 때까지 여러 페이지를 병렬 조회합니다.
   for (let start = 2; start <= 100; start += PAGE_CONCURRENCY) {
+    // 마지막 페이지가 나올 때까지 여러 페이지를 병렬 조회합니다.
     const pages = Array.from({length: Math.min(PAGE_CONCURRENCY, 101 - start)}, (_, i) => start + i);
     const results = await Promise.all(pages.map(getPage));
     let last = false;
-    for (const items of results) {
-      add(items);
-      if (items.length < ROWS) last = true;
-    }
+    for (const items of results) { add(items); if (items.length < ROWS) last = true; }
     if (last) break;
   }
   return all;
@@ -123,7 +113,6 @@ async function ticketStatus(ids, key) {
   const unique = [...new Set(ids)].filter(id => /^PF\d+$/.test(id)).slice(0, TICKET_BATCH_SIZE);
   const result = {};
   let cursor = 0;
-
   const worker = async () => {
     // 상세 API를 최대 5개씩 동시에 호출합니다.
     while (cursor < unique.length) {
@@ -136,12 +125,9 @@ async function ticketStatus(ids, key) {
         await saveText(url, xml, DETAIL_CACHE_TTL);
         const urls = xml.match(/<relateurl>[\s\S]*?<\/relateurl>/g) || [];
         result[id] = urls.some(v => /^https?:\/\//i.test(v.replace(/<\/?relateurl>/g, '').trim()));
-      } catch (_) {
-        result[id] = false;
-      }
+      } catch (_) { result[id] = false; }
     }
   };
-
   await Promise.all(Array.from({length: Math.min(DETAIL_CONCURRENCY, unique.length)}, worker));
   return result;
 }
@@ -168,7 +154,7 @@ export default {
 
     if (url.pathname === '/api/performances/first') {
       // 첫 화면은 28개만 요청해 KOPIS 응답을 최대한 작게 만듭니다.
-      const keyUrl = `first-v3:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      const keyUrl = `first-v4:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const hit = await caches.default.match(cacheKey(keyUrl));
       if (hit) return hit;
       try {
@@ -176,14 +162,14 @@ export default {
         const response = new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300'}});
         await caches.default.put(cacheKey(keyUrl), response.clone());
         return response;
-      } catch (_) {
-        return Response.json({error: 'KOPIS first page request failed'}, {status: 502});
+      } catch (error) {
+        return Response.json({error: String(error?.message || error).slice(0, 200)}, {status: 502});
       }
     }
 
     if (url.pathname === '/api/performances') {
       // 전체 공연을 페이지 끝까지 수집해 캐시합니다.
-      const keyUrl = `full-v11:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      const keyUrl = `full-v13:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const hit = await caches.default.match(cacheKey(keyUrl));
       if (hit) return hit;
       try {
@@ -192,8 +178,8 @@ export default {
         const response = new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': `public, max-age=${LIST_CACHE_TTL}`}});
         await caches.default.put(cacheKey(keyUrl), response.clone());
         return response;
-      } catch (_) {
-        return Response.json({error: 'KOPIS request failed'}, {status: 502});
+      } catch (error) {
+        return Response.json({error: String(error?.message || error).slice(0, 200)}, {status: 502});
       }
     }
 
@@ -201,11 +187,8 @@ export default {
       // 필요한 공연만 상세 예매처 여부를 확인합니다.
       const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean);
       if (!ids.length || ids.length > TICKET_BATCH_SIZE) return Response.json({error: `ids must contain 1-${TICKET_BATCH_SIZE} performance IDs`}, {status: 400});
-      try {
-        return Response.json({statuses: await ticketStatus(ids, key)}, {headers: {'Cache-Control': 'public, max-age=900'}});
-      } catch (_) {
-        return Response.json({error: 'Ticket status request failed'}, {status: 502});
-      }
+      try { return Response.json({statuses: await ticketStatus(ids, key)}, {headers: {'Cache-Control': 'public, max-age=900'}}); }
+      catch (_) { return Response.json({error: 'Ticket status request failed'}, {status: 502}); }
     }
 
     if (url.pathname === '/api/performance') {
@@ -219,25 +202,24 @@ export default {
         const xml = (await cachedText(apiUrl)) || await kopis(api);
         await saveText(apiUrl, xml, DETAIL_CACHE_TTL);
         return new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': `public, max-age=${DETAIL_CACHE_TTL}`}});
-      } catch (_) {
-        return Response.json({error: 'KOPIS request failed'}, {status: 502});
-      }
+      } catch (_) { return Response.json({error: 'KOPIS request failed'}, {status: 502}); }
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      // 첫 화면을 먼저 표시하고 전체 목록은 백그라운드에서 가져오도록 로더를 주입합니다.
+      // 정적 HTML에 로더를 주입하되, 초기 API 실패도 화면에 즉시 표시합니다.
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
       const loader = `
 async function loadWithTicketFilter(){
+  // 검색 버튼을 잠그고 초기 로딩 상태를 표시합니다.
   $('#go').disabled=true;
   grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
   const p=new URLSearchParams({rows:'28'});
   if(active)p.set('shcate',active);
   if($('#area').value)p.set('shigucodesub',$('#area').value);
   if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
-  const firstKey='movoka-first-list-v3:'+p.toString();
-  const fullKey='movoka-full-list-v2:'+p.toString();
+  const firstKey='movoka-first-list-v4:'+p.toString();
+  const fullKey='movoka-full-list-v4:'+p.toString();
   const apply=xml=>{currentPage=1;renderItems(parse(xml));};
 
   try{
@@ -257,27 +239,29 @@ async function loadWithTicketFilter(){
     }
   }catch(_){localStorage.removeItem(firstKey);}
 
-  // 첫 화면은 28개만 받아 8초 이상 초기 화면이 기다리지 않게 합니다.
+  // 첫 페이지는 최대 8초만 기다리고 성공 즉시 화면에 표시합니다.
   try{
     const response=await fetchWithTimeout('/api/performances/first?'+p.toString(),8000);
-    if(response.ok){
-      const xml=await response.text();
-      localStorage.setItem(firstKey,JSON.stringify({data:xml,savedAt:Date.now()}));
-      apply(xml);
-    }
-  }catch(_){
-    // 첫 요청이 느리거나 실패해도 전체 목록 요청은 계속 백그라운드에서 진행합니다.
+    if(!response.ok)throw new Error('first page failed');
+    const xml=await response.text();
+    // 화면을 먼저 갱신하고 캐시는 실패해도 무시합니다.
+    apply(xml);
+    try{localStorage.setItem(firstKey,JSON.stringify({data:xml,savedAt:Date.now()}));}catch(_){ }
+  }catch(error){
+    // 초기 요청이 실패하면 무한 로딩 대신 원인을 표시합니다.
+    grid.innerHTML='<div class="empty">공연 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.</div>';
+  }finally{
+    $('#go').disabled=false;
   }
 
-  // 전체 목록은 화면을 막지 않고 백그라운드에서 완성합니다.
+  // 전체 목록은 초기 화면과 별개로 백그라운드에서 완성합니다.
   fetch('/api/performances?'+p.toString())
     .then(r=>{if(!r.ok)throw new Error('full list failed');return r.text();})
     .then(xml=>{
-      localStorage.setItem(fullKey,JSON.stringify({data:xml,savedAt:Date.now()}));
+      try{localStorage.setItem(fullKey,JSON.stringify({data:xml,savedAt:Date.now()}));}catch(_){ }
       apply(xml);
     })
-    .catch(()=>{})
-    .finally(()=>{$('#go').disabled=false;});
+    .catch(()=>{});
 }
 
 // 페이지가 로드되면 공연 목록 조회를 자동으로 시작합니다.
