@@ -2,6 +2,7 @@
 // KOPIS 공연 API를 브라우저에서 사용할 수 있도록 중계합니다.
 
 const KOPIS_PAGE_ROWS = 100;
+const DETAIL_CONCURRENCY = 5;
 
 function getYmd(date) {
   const pad = n => String(n).padStart(2, '0');
@@ -48,6 +49,46 @@ async function getAllPerformances(baseApi) {
   return all;
 }
 
+async function hasTicketVendor(id, key) {
+  // 공연 상세정보에서 KOPIS가 등록한 예매처 URL(relateurl)을 확인합니다.
+  const api = new URL(`https://www.kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
+  api.searchParams.set('service', key);
+  const xml = await proxyKopis(api);
+  const urls = xml.match(/<relateurl>([\s\S]*?)<\/relateurl>/g) || [];
+
+  // 비어 있지 않은 예매처 URL이 하나라도 있어야 예매 라인업에 포함합니다.
+  return urls.some(item => {
+    const value = item.replace(/^<relateurl>/, '').replace(/<\/relateurl>$/, '').trim();
+    return /^https?:\/\//i.test(value);
+  });
+}
+
+async function filterBookablePerformances(performances, key) {
+  const result = [];
+  let next = 0;
+
+  // KOPIS 상세 API를 동시에 5개씩 조회해 예매처가 등록된 공연만 남깁니다.
+  async function worker() {
+    while (true) {
+      const index = next++;
+      if (index >= performances.length) return;
+
+      const db = performances[index];
+      const id = db.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1] || '';
+      if (!id) continue;
+
+      try {
+        if (await hasTicketVendor(id, key)) result.push(db);
+      } catch (_) {
+        // 상세 조회 실패 공연은 예매 가능 여부를 확인할 수 없으므로 제외합니다.
+      }
+    }
+  }
+
+  await Promise.all(Array.from({length: Math.min(DETAIL_CONCURRENCY, performances.length)}, worker));
+  return result;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -85,8 +126,9 @@ export default {
           }
         }
 
-        // 조건에 맞는 공연을 중복 없이 모두 반환합니다.
-        const xml = `<dbs>${Array.from(merged.values()).join('')}</dbs>`;
+        // KOPIS 상세정보에 실제 예매처 URL이 등록된 공연만 예매 라인업으로 사용합니다.
+        const bookable = await filterBookablePerformances(Array.from(merged.values()), key);
+        const xml = `<dbs>${bookable.join('')}</dbs>`;
 
         return new Response(xml, {
           headers: {
@@ -123,12 +165,13 @@ export default {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
 
-      // 기존 캐시를 우회하여 새 전체 데이터를 다시 받게 합니다.
-      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v6:');
-      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v6:');
-      html = html.replaceAll('movoka-performances-cache-v3:', 'movoka-performances-cache-v6:');
-      html = html.replaceAll('movoka-performances-cache-v4:', 'movoka-performances-cache-v6:');
-      html = html.replaceAll('movoka-performances-cache-v5:', 'movoka-performances-cache-v6:');
+      // 예매 가능 필터가 적용된 새 데이터를 다시 받도록 기존 캐시를 모두 무효화합니다.
+      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v7:');
+      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v7:');
+      html = html.replaceAll('movoka-performances-cache-v3:', 'movoka-performances-cache-v7:');
+      html = html.replaceAll('movoka-performances-cache-v4:', 'movoka-performances-cache-v7:');
+      html = html.replaceAll('movoka-performances-cache-v5:', 'movoka-performances-cache-v7:');
+      html = html.replaceAll('movoka-performances-cache-v6:', 'movoka-performances-cache-v7:');
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
