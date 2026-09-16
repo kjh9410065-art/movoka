@@ -15,38 +15,22 @@ async function proxyKopis(api) {
 }
 
 async function getAllPerformances(baseApi) {
-  // 첫 페이지에서 KOPIS가 알려주는 전체 검색 건수를 먼저 확인합니다.
-  const firstApi = new URL(baseApi.toString());
-  firstApi.searchParams.set('cpage', '1');
-  firstApi.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
+  const all = [];
+  let page = 1;
 
-  const firstXml = await proxyKopis(firstApi);
-  const firstMatches = firstXml.match(/<db>[\s\S]*?<\/db>/g) || [];
-  const all = [...firstMatches];
+  // KOPIS는 페이지당 최대 100개만 반환하므로 마지막 페이지까지 반복 조회합니다.
+  while (true) {
+    const api = new URL(baseApi.toString());
+    api.searchParams.set('cpage', String(page));
+    api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
 
-  // totalcount가 있으면 필요한 페이지 수를 정확히 계산합니다.
-  const totalMatch = firstXml.match(/<totalcount>\s*(\d+)\s*<\/totalcount>/i);
-  const totalCount = totalMatch ? Number(totalMatch[1]) : 0;
-  const totalPages = totalCount > 0
-    ? Math.ceil(totalCount / KOPIS_PAGE_ROWS)
-    : (firstMatches.length < KOPIS_PAGE_ROWS ? 1 : 2);
+    const xml = await proxyKopis(api);
+    const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
+    all.push(...matches);
 
-  // 첫 페이지 이후의 모든 페이지를 가져옵니다. 총 공연 수에 100개 제한을 두지 않습니다.
-  if (totalPages > 1) {
-    const pages = await Promise.all(
-      Array.from({length: totalPages - 1}, (_, index) => {
-        const page = index + 2;
-        const api = new URL(baseApi.toString());
-        api.searchParams.set('cpage', String(page));
-        api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
-        return proxyKopis(api);
-      })
-    );
-
-    for (const xml of pages) {
-      const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
-      all.push(...matches);
-    }
+    // 100개보다 적으면 마지막 페이지입니다.
+    if (matches.length < KOPIS_PAGE_ROWS) break;
+    page++;
   }
 
   return `<dbs>${all.join('')}</dbs>`;
@@ -115,8 +99,9 @@ export default {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
 
-      // 이전 100개 캐시를 사용하지 않도록 새 캐시 버전을 적용합니다.
-      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v2:');
+      // 기존 v1/v2 캐시를 모두 우회하여 새 전체 데이터를 다시 받게 합니다.
+      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v3:');
+      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v3:');
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
