@@ -98,7 +98,7 @@ async function hasTicketVendor(id, key) {
 }
 
 async function getTicketStatuses(ids, key) {
-  // 한 번에 최대 20개 공연만 상세 조회합니다.
+  // 상세 예매처 확인 API를 직접 호출할 때만 사용하는 함수입니다.
   const uniqueIds = [...new Set(ids)].filter(id => /^PF\d+$/.test(id)).slice(0, TICKET_BATCH_SIZE);
   const statuses = {};
   let next = 0;
@@ -112,7 +112,6 @@ async function getTicketStatuses(ids, key) {
       try {
         statuses[id] = await hasTicketVendor(id, key);
       } catch (_) {
-        // 확인 실패 공연은 예매 가능으로 처리하지 않습니다.
         statuses[id] = false;
       }
     }
@@ -153,8 +152,8 @@ export default {
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
 
-      // 이전 목록 캐시와 구분해 최신 로직으로 다시 생성합니다.
-      const listCacheKey = `v7:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      // 목록 버전을 올려 브라우저와 Cloudflare의 이전 결과를 사용하지 않게 합니다.
+      const listCacheKey = `v8:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const cachedList = await caches.default.match(cacheRequest(listCacheKey));
       if (cachedList) return cachedList;
 
@@ -175,12 +174,16 @@ export default {
         if (area) baseApi.searchParams.set('signgucode', area);
         if (keyword) baseApi.searchParams.set('shprfnm', keyword);
 
-        // 공연예정과 공연중을 모두 수집합니다.
-        const merged = new Map();
-        for (const state of ['01', '02']) {
+        // 공연예정과 공연중을 동시에 요청해 목록 조회 시간을 줄입니다.
+        const stateResults = await Promise.all(['01', '02'].map(async state => {
           const api = new URL(baseApi.toString());
           api.searchParams.set('prfstate', state);
-          const performances = await getAllPerformances(api);
+          return getAllPerformances(api);
+        }));
+
+        // 두 상태의 결과를 공연 ID 기준으로 합칩니다.
+        const merged = new Map();
+        for (const performances of stateResults) {
           for (const db of performances) {
             const id = db.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1] || '';
             if (id && !merged.has(id)) merged.set(id, db);
@@ -202,6 +205,7 @@ export default {
     }
 
     if (url.pathname === '/api/ticket-status') {
+      // 필요할 때만 상세 예매처 상태를 확인할 수 있도록 API는 유지합니다.
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
       const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean);
       if (!ids.length || ids.length > TICKET_BATCH_SIZE) {
@@ -226,121 +230,19 @@ export default {
         const cachedXml = await getCachedText(apiUrl);
         const xml = cachedXml || await proxyKopis(api);
         if (!cachedXml) await putCachedText(apiUrl, xml, DETAIL_CACHE_TTL);
-        return new Response(xml, {headers:{'Content-Type':'application/xml; charset=utf-8','Cache-Control':`public, max-age=${DETAIL_CACHE_TTL}`}});
+        return new Response(xml, {headers:{'Content-Type':'application/xml; charset=utf-8','Cache-Control':`public, max-age=${DETAIL_CACHE_TTL}`} });
       } catch (_) {
         return Response.json({error:'KOPIS request failed'}, {status:502});
       }
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      // 정적 HTML을 가져와 Worker 전용 로더를 주입합니다.
+      // 정적 HTML을 가져옵니다. 초기 화면에서 공연별 상세 API를 호출하지 않습니다.
       const asset = await env.ASSETS.fetch(request);
-      let html = await asset.text();
-
-      // 브라우저의 오래된 공연 캐시를 새 버전으로 교체합니다.
-      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v13:');
-      for (let i = 2; i <= 12; i++) html = html.replaceAll(`movoka-performances-cache-v${i}:`, 'movoka-performances-cache-v13:');
-      html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
-      html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
-
-      // 전체 목록을 먼저 받고, 예매처 확인 요청은 여러 배치를 동시에 처리합니다.
-      // 각 배치가 끝날 때마다 화면을 갱신해 긴 로딩 화면이 유지되지 않도록 합니다.
-      const ticketLoader = `
-async function loadWithTicketFilter(){
-  grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
-  $('#go').disabled=true;
-  const p=new URLSearchParams({rows:'100',ticketable:'1'});
-  if(active)p.set('shcate',active);
-  if($('#area').value)p.set('shigucodesub',$('#area').value);
-  if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
-  const rawKey='movoka-performances-raw-cache-v13:'+p.toString();
-  const bookableKey='movoka-performances-bookable-cache-v3:'+p.toString();
-  let rawXml=null;
-  let cachedBookable=null;
-
-  try{
-    const savedBookable=localStorage.getItem(bookableKey);
-    if(savedBookable){
-      const parsed=JSON.parse(savedBookable);
-      if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL)cachedBookable=parse(parsed.data);
-    }
-  }catch(_){localStorage.removeItem(bookableKey)}
-
-  if(cachedBookable){
-    currentPage=1;
-    renderItems(cachedBookable);
-    $('#go').disabled=false;
-    return;
-  }
-
-  try{
-    const savedRaw=localStorage.getItem(rawKey);
-    if(savedRaw){
-      const parsed=JSON.parse(savedRaw);
-      if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL)rawXml=parsed.data;
-    }
-
-    if(!rawXml){
-      const r=await fetchWithTimeout('/api/performances?'+p.toString());
-      if(!r.ok)throw new Error('performance list failed');
-      rawXml=await r.text();
-      localStorage.setItem(rawKey,JSON.stringify({data:rawXml,savedAt:Date.now()}));
-    }
-
-    const all=parse(rawXml);
-    const ids=all.map(x=>x.mt20id).filter(Boolean);
-    const statusMap={};
-    const batches=[];
-    for(let i=0;i<ids.length;i+=20)batches.push(ids.slice(i,i+20));
-
-    // 최대 4개 배치를 동시에 처리해 기존의 완전 순차 로딩보다 훨씬 빠르게 확인합니다.
-    let nextBatch=0;
-    let completed=0;
-    async function runBatchWorker(){
-      while(true){
-        const batchIndex=nextBatch++;
-        if(batchIndex>=batches.length)return;
-        const batch=batches[batchIndex];
-        try{
-          const r=await fetchWithTimeout('/api/ticket-status?ids='+encodeURIComponent(batch.join(',')));
-          if(r.ok){
-            const data=await r.json();
-            Object.assign(statusMap,data.statuses||{});
-          }
-        }catch(_){
-          // 개별 배치 실패가 전체 공연 목록 표시를 막지 않도록 계속 진행합니다.
-        }
-        completed++;
-        const current=all.filter(item=>statusMap[item.mt20id]===true);
-        count.textContent='예매 가능한 공연 확인 중... '+completed+' / '+batches.length+' 묶음';
-        currentPage=1;
-        renderItems(current);
-      }
-    }
-
-    await Promise.all(Array.from({length:Math.min(4,batches.length)},()=>runBatchWorker()));
-
-    // 모든 확인이 끝난 뒤 원래 KOPIS 순서를 유지합니다.
-    const bookable=all.filter(item=>statusMap[item.mt20id]===true);
-    const bookableXml='<dbs>'+bookable.map(x=>'<db><mt20id>'+esc(x.mt20id)+'</mt20id><prfnm>'+esc(x.prfnm)+'</prfnm><prfpdfrom>'+esc(x.prfpdfrom)+'</prfpdfrom><prfpdto>'+esc(x.prfpdto)+'</prfpdto><fcltynm>'+esc(x.fcltynm)+'</fcltynm><poster>'+esc(x.poster)+'</poster><genrenm>'+esc(x.genrenm)+'</genrenm><prfcast>'+esc(x.prfcast)+'</prfcast><prfurl>'+esc(x.prfurl)+'</prfurl></db>').join('')+'</dbs>';
-    localStorage.setItem(bookableKey,JSON.stringify({data:bookableXml,savedAt:Date.now()}));
-    currentPage=1;
-    renderItems(bookable);
-  }catch(e){
-    count.textContent='';
-    grid.innerHTML='<div class="empty">공연 정보를 불러오지 못했습니다.</div>';
-    $('#movoka-pagination').innerHTML='';
-  }finally{
-    $('#go').disabled=false;
-  }
-}
-`;
-
-      html = html.replace('load();\n</script>', ticketLoader + 'loadWithTicketFilter();\n</script>');
       const headers = new Headers(asset.headers);
       headers.delete('Content-Length');
       headers.set('Cache-Control','no-store, no-cache, must-revalidate');
-      return new Response(html,{status:asset.status,headers});
+      return new Response(asset.body,{status:asset.status,headers});
     }
 
     return env.ASSETS.fetch(request);
