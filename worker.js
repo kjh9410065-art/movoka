@@ -35,7 +35,6 @@ async function getAllPerformances(baseApi) {
     const api = new URL(baseApi.toString());
     api.searchParams.set('cpage', String(page));
     api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
-
     const xml = await proxyKopis(api);
     const matches = extractDb(xml);
 
@@ -53,7 +52,6 @@ async function getAllPerformances(baseApi) {
     page++;
     if (page > 100) throw new Error('KOPIS pagination limit exceeded');
   }
-
   return all;
 }
 
@@ -69,7 +67,7 @@ async function getCachedText(url) {
 }
 
 async function putCachedText(url, text, ttl) {
-  // KOPIS 응답을 지정된 시간 동안 캐시합니다.
+  // KOPIS 상세 응답을 지정된 시간 동안 캐시합니다.
   const response = new Response(text, {
     headers: {
       'Content-Type': 'application/xml; charset=utf-8',
@@ -84,11 +82,9 @@ async function hasTicketVendor(id, key) {
   const api = new URL(`https://kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
   api.searchParams.set('service', key);
   const apiUrl = api.toString();
-
   const cachedXml = await getCachedText(apiUrl);
   const xml = cachedXml || await proxyKopis(api);
   if (!cachedXml) await putCachedText(apiUrl, xml, DETAIL_CACHE_TTL);
-
   const urls = xml.match(/<relateurl>([\s\S]*?)<\/relateurl>/g) || [];
   return urls.some(item => {
     // 태그를 제거한 URL이 http/https 형식인지 확인합니다.
@@ -98,22 +94,19 @@ async function hasTicketVendor(id, key) {
 }
 
 async function getTicketStatuses(ids, key) {
-  // 상세 예매처 확인 API를 직접 호출할 때만 사용하는 함수입니다.
+  // 상세 예매처 확인 API를 직접 사용할 때만 실행합니다.
   const uniqueIds = [...new Set(ids)].filter(id => /^PF\d+$/.test(id)).slice(0, TICKET_BATCH_SIZE);
   const statuses = {};
   let next = 0;
 
   async function worker() {
-    // 상세 API를 동시에 5개씩만 호출합니다.
+    // 상세 API를 동시에 5개씩 호출합니다.
     while (true) {
       const index = next++;
       if (index >= uniqueIds.length) return;
       const id = uniqueIds[index];
-      try {
-        statuses[id] = await hasTicketVendor(id, key);
-      } catch (_) {
-        statuses[id] = false;
-      }
+      try { statuses[id] = await hasTicketVendor(id, key); }
+      catch (_) { statuses[id] = false; }
     }
   }
 
@@ -152,7 +145,7 @@ export default {
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
 
-      // 목록 버전을 올려 브라우저와 Cloudflare의 이전 결과를 사용하지 않게 합니다.
+      // 새 버전의 목록 캐시를 사용합니다.
       const listCacheKey = `v8:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const cachedList = await caches.default.match(cacheRequest(listCacheKey));
       if (cachedList) return cachedList;
@@ -174,7 +167,7 @@ export default {
         if (area) baseApi.searchParams.set('signgucode', area);
         if (keyword) baseApi.searchParams.set('shprfnm', keyword);
 
-        // 공연예정과 공연중을 동시에 요청해 목록 조회 시간을 줄입니다.
+        // 공연예정과 공연중을 동시에 요청합니다.
         const stateResults = await Promise.all(['01', '02'].map(async state => {
           const api = new URL(baseApi.toString());
           api.searchParams.set('prfstate', state);
@@ -205,12 +198,10 @@ export default {
     }
 
     if (url.pathname === '/api/ticket-status') {
-      // 필요할 때만 상세 예매처 상태를 확인할 수 있도록 API는 유지합니다.
+      // 필요할 때만 상세 예매처 상태를 확인할 수 있도록 API를 유지합니다.
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
       const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean);
-      if (!ids.length || ids.length > TICKET_BATCH_SIZE) {
-        return Response.json({error:`ids must contain 1-${TICKET_BATCH_SIZE} performance IDs`}, {status:400});
-      }
+      if (!ids.length || ids.length > TICKET_BATCH_SIZE) return Response.json({error:`ids must contain 1-${TICKET_BATCH_SIZE} performance IDs`}, {status:400});
       try {
         const statuses = await getTicketStatuses(ids, key);
         return Response.json({statuses}, {headers:{'Cache-Control':'public, max-age=900'}});
@@ -237,12 +228,52 @@ export default {
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      // 정적 HTML을 가져옵니다. 초기 화면에서 공연별 상세 API를 호출하지 않습니다.
+      // 정적 HTML에 빠른 목록 로더만 주입합니다. 공연별 상세 API는 초기 로딩에서 호출하지 않습니다.
       const asset = await env.ASSETS.fetch(request);
+      let html = await asset.text();
+      const fastLoader = `
+async function loadWithTicketFilter(){
+  $('#go').disabled=true;
+  grid.innerHTML='<div class="empty">공연 목록을 불러오는 중입니다.</div>';
+  const p=new URLSearchParams({rows:'100'});
+  if(active)p.set('shcate',active);
+  if($('#area').value)p.set('shigucodesub',$('#area').value);
+  if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
+  const cacheKey='movoka-fast-list-v14:'+p.toString();
+  try{
+    const saved=localStorage.getItem(cacheKey);
+    if(saved){
+      const parsed=JSON.parse(saved);
+      if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL){
+        currentPage=1;
+        renderItems(parse(parsed.data));
+        $('#go').disabled=false;
+        return;
+      }
+    }
+  }catch(_){localStorage.removeItem(cacheKey)}
+  try{
+    const r=await fetchWithTimeout('/api/performances?'+p.toString());
+    if(!r.ok)throw new Error('performance list failed');
+    const xml=await r.text();
+    localStorage.setItem(cacheKey,JSON.stringify({data:xml,savedAt:Date.now()}));
+    currentPage=1;
+    renderItems(parse(xml));
+  }catch(_){
+    count.textContent='';
+    grid.innerHTML='<div class="empty">공연 정보를 불러오지 못했습니다.</div>';
+    $('#movoka-pagination').innerHTML='';
+  }finally{
+    $('#go').disabled=false;
+  }
+}
+`;
+      // 기존 HTML의 loadWithTicketFilter 호출이 이 빠른 로더를 사용하도록 교체합니다.
+      html=html.replace('</script>',fastLoader+'</script>');
       const headers = new Headers(asset.headers);
       headers.delete('Content-Length');
       headers.set('Cache-Control','no-store, no-cache, must-revalidate');
-      return new Response(asset.body,{status:asset.status,headers});
+      return new Response(html,{status:asset.status,headers});
     }
 
     return env.ASSETS.fetch(request);
