@@ -15,7 +15,7 @@ function getYmd(date) {
 }
 
 async function proxyKopis(api) {
-  // KOPIS 공식 canonical host를 직접 호출해 리다이렉트 문제를 피합니다.
+  // KOPIS 공식 API를 호출합니다.
   const response = await fetch(api.toString(), { redirect: 'follow' });
   if (!response.ok) throw new Error(`KOPIS HTTP ${response.status}`);
   return response.text();
@@ -27,7 +27,7 @@ function extractDb(xml) {
 }
 
 async function getAllPerformances(baseApi) {
-  // 첫 페이지를 확인한 뒤 나머지 페이지를 병렬로 수집해 전체 공연을 빠르게 가져옵니다.
+  // 첫 페이지를 확인한 뒤 나머지 페이지를 8개씩 병렬 수집합니다.
   const all = [];
   const seen = new Set();
 
@@ -53,12 +53,9 @@ async function getAllPerformances(baseApi) {
 
   const first = await fetchPage(1);
   addResults(first);
-
-  // 첫 페이지가 100개 미만이면 첫 페이지가 마지막 페이지입니다.
   if (first.length < KOPIS_PAGE_ROWS) return all;
 
-  // KOPIS 전체 건수를 별도 호출하지 않고 페이지를 8개씩 병렬 확인합니다.
-  // 100페이지를 안전상한으로 두고, 100개 미만인 페이지가 나오면 이후 페이지는 중단합니다.
+  // 마지막 페이지를 찾을 때까지 여러 페이지를 병렬 조회합니다.
   for (let start = 2; start <= 100; start += LIST_PAGE_CONCURRENCY) {
     const pages = Array.from(
       { length: Math.min(LIST_PAGE_CONCURRENCY, 101 - start) },
@@ -67,12 +64,9 @@ async function getAllPerformances(baseApi) {
     const results = await Promise.all(pages.map(page => fetchPage(page)));
     let reachedLastPage = false;
 
-    results.forEach((matches, index) => {
+    results.forEach(matches => {
       addResults(matches);
       if (matches.length < KOPIS_PAGE_ROWS) reachedLastPage = true;
-      // 마지막 페이지가 발견된 뒤의 빈 페이지는 데이터에 추가하지 않습니다.
-      if (matches.length === 0) return;
-      void index;
     });
 
     if (reachedLastPage) break;
@@ -104,7 +98,7 @@ async function putCachedText(url, text, ttl) {
 }
 
 async function hasTicketVendor(id, key) {
-  // 공연 상세정보의 relateurl에 실제 예매처 URL이 있는지 확인합니다.
+  // 공연 상세정보의 relateurl에 예매처 URL이 있는지 확인합니다.
   const api = new URL(`https://kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`);
   api.searchParams.set('service', key);
   const apiUrl = api.toString();
@@ -113,7 +107,7 @@ async function hasTicketVendor(id, key) {
   if (!cachedXml) await putCachedText(apiUrl, xml, DETAIL_CACHE_TTL);
   const urls = xml.match(/<relateurl>([\s\S]*?)<\/relateurl>/g) || [];
   return urls.some(item => {
-    // 태그를 제거한 URL이 http/https 형식인지 확인합니다.
+    // 태그를 제거한 URL이 실제 HTTP/HTTPS URL인지 확인합니다.
     const value = item.replace(/^<relateurl>/, '').replace(/<\/relateurl>$/, '').trim();
     return /^https?:\/\//i.test(value);
   });
@@ -140,6 +134,47 @@ async function getTicketStatuses(ids, key) {
   return statuses;
 }
 
+function buildBaseApi(url, key) {
+  // 목록 조회에 공통으로 사용하는 KOPIS 요청을 만듭니다.
+  const now = new Date();
+  const end = new Date(now);
+  end.setDate(end.getDate() + 30);
+  const baseApi = new URL('https://kopis.or.kr/openApi/restful/pblprfr');
+  baseApi.searchParams.set('service', key);
+  baseApi.searchParams.set('stdate', url.searchParams.get('stdate') || getYmd(now));
+  baseApi.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
+
+  // 검색 조건이 있을 때만 KOPIS에 전달합니다.
+  const genre = url.searchParams.get('shcate') || '';
+  const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || url.searchParams.get('shigucodesub') || '';
+  const keyword = url.searchParams.get('shprfnm') || '';
+  if (genre) baseApi.searchParams.set('shcate', genre);
+  if (area) baseApi.searchParams.set('signgucode', area);
+  if (keyword) baseApi.searchParams.set('shprfnm', keyword);
+  return baseApi;
+}
+
+async function getFirstPagePerformances(baseApi) {
+  // 첫 화면에 즉시 사용할 페이지 1을 가져옵니다.
+  const states = await Promise.all(['01', '02'].map(async state => {
+    const api = new URL(baseApi.toString());
+    api.searchParams.set('prfstate', state);
+    api.searchParams.set('cpage', '1');
+    api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
+    return extractDb(await proxyKopis(api));
+  }));
+
+  // 공연예정과 공연중을 공연 ID 기준으로 합칩니다.
+  const merged = new Map();
+  for (const items of states) {
+    for (const db of items) {
+      const id = db.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1] || '';
+      if (id && !merged.has(id)) merged.set(id, db);
+    }
+  }
+  return `<dbs>${Array.from(merged.values()).join('')}</dbs>`;
+}
+
 export default {
   async fetch(request, env) {
     // 요청 URL과 KOPIS 인증키를 준비합니다.
@@ -147,7 +182,7 @@ export default {
     const key = env.KOPIS_API_KEY;
 
     if (url.pathname === '/api/debug-kopis') {
-      // 배포된 Worker가 KOPIS에 접근할 수 있는지 확인하는 안전한 진단 API입니다.
+      // Worker와 KOPIS 연결 상태를 확인하는 안전한 진단 API입니다.
       if (!key) return Response.json({ok:false, error:'KOPIS_API_KEY is not configured'}, {status:500});
       try {
         const now = new Date();
@@ -163,37 +198,37 @@ export default {
         const xml = await proxyKopis(api);
         return Response.json({ok:true, host:'kopis.or.kr', responseLength:xml.length, dbCount:extractDb(xml).length, preview:xml.slice(0,300)});
       } catch (error) {
-        // 인증키나 전체 요청 URL은 진단 응답에 포함하지 않습니다.
         return Response.json({ok:false, host:'kopis.or.kr', error:String(error?.message || error).slice(0,200)}, {status:502});
       }
     }
 
-    if (url.pathname === '/api/performances') {
+    if (url.pathname === '/api/performances/first') {
+      // 첫 화면은 전체 집계를 기다리지 않고 즉시 보여줍니다.
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
+      const cacheKey = `v1-first:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      const cached = await caches.default.match(cacheRequest(cacheKey));
+      if (cached) return cached;
+      try {
+        const xml = await getFirstPagePerformances(buildBaseApi(url, key));
+        const response = new Response(xml, {
+          headers: {'Content-Type':'application/xml; charset=utf-8','Cache-Control':'public, max-age=300'}
+        });
+        await caches.default.put(cacheRequest(cacheKey), response.clone());
+        return response;
+      } catch (_) {
+        return Response.json({error:'KOPIS first page request failed'}, {status:502});
+      }
+    }
 
-      // 목록 캐시를 사용해 같은 조건의 반복 요청을 KOPIS까지 보내지 않습니다.
-      const listCacheKey = `v9:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+    if (url.pathname === '/api/performances') {
+      // 전체 공연을 끝 페이지까지 수집해 최종 집계합니다.
+      if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
+      const listCacheKey = `v10:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const cachedList = await caches.default.match(cacheRequest(listCacheKey));
       if (cachedList) return cachedList;
 
       try {
-        const now = new Date();
-        const end = new Date(now);
-        end.setDate(end.getDate() + 30);
-        const baseApi = new URL('https://kopis.or.kr/openApi/restful/pblprfr');
-        baseApi.searchParams.set('service', key);
-        baseApi.searchParams.set('stdate', url.searchParams.get('stdate') || getYmd(now));
-        baseApi.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
-
-        // 검색 조건이 있을 때만 KOPIS에 전달합니다.
-        const genre = url.searchParams.get('shcate') || '';
-        const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || url.searchParams.get('shigucodesub') || '';
-        const keyword = url.searchParams.get('shprfnm') || '';
-        if (genre) baseApi.searchParams.set('shcate', genre);
-        if (area) baseApi.searchParams.set('signgucode', area);
-        if (keyword) baseApi.searchParams.set('shprfnm', keyword);
-
-        // 공연예정과 공연중을 동시에 요청합니다.
+        const baseApi = buildBaseApi(url, key);
         const stateResults = await Promise.all(['01', '02'].map(async state => {
           const api = new URL(baseApi.toString());
           api.searchParams.set('prfstate', state);
@@ -211,10 +246,7 @@ export default {
 
         const xml = `<dbs>${Array.from(merged.values()).join('')}</dbs>`;
         const response = new Response(xml, {
-          headers: {
-            'Content-Type': 'application/xml; charset=utf-8',
-            'Cache-Control': `public, max-age=${LIST_CACHE_TTL}`
-          }
+          headers: {'Content-Type':'application/xml; charset=utf-8','Cache-Control':`public, max-age=${LIST_CACHE_TTL}`}
         });
         await caches.default.put(cacheRequest(listCacheKey), response.clone());
         return response;
@@ -224,7 +256,7 @@ export default {
     }
 
     if (url.pathname === '/api/ticket-status') {
-      // 필요할 때만 상세 예매처 상태를 확인할 수 있도록 API를 유지합니다.
+      // 필요할 때만 상세 예매처 상태를 확인합니다.
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
       const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean);
       if (!ids.length || ids.length > TICKET_BATCH_SIZE) return Response.json({error:`ids must contain 1-${TICKET_BATCH_SIZE} performance IDs`}, {status:400});
@@ -237,6 +269,7 @@ export default {
     }
 
     if (url.pathname === '/api/performance') {
+      // 공연 상세정보는 카드에서 요청할 때만 가져옵니다.
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
       const id = url.searchParams.get('mt20id');
       if (!id || !/^PF\d+$/.test(id)) return Response.json({error:'Invalid mt20id'}, {status:400});
@@ -254,47 +287,69 @@ export default {
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      // 정적 HTML에 목록 로더를 주입합니다. 공연별 상세 API는 초기 로딩에서 호출하지 않습니다.
+      // 첫 페이지를 먼저 표시하고 전체 목록은 백그라운드에서 집계하도록 로더를 주입합니다.
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
       const fastLoader = `
 async function loadWithTicketFilter(){
   $('#go').disabled=true;
-  grid.innerHTML='<div class="empty">공연 목록을 불러오는 중입니다.</div>';
+  grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
   const p=new URLSearchParams({rows:'100'});
   if(active)p.set('shcate',active);
   if($('#area').value)p.set('shigucodesub',$('#area').value);
   if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
-  const cacheKey='movoka-fast-list-v15:'+p.toString();
+  const firstKey='movoka-first-list-v1:'+p.toString();
+  const fullKey='movoka-full-list-v1:'+p.toString();
+
+  const applyXml=(xml)=>{
+    currentPage=1;
+    renderItems(parse(xml));
+  };
+
   try{
-    const saved=localStorage.getItem(cacheKey);
+    const saved=localStorage.getItem(fullKey);
     if(saved){
       const parsed=JSON.parse(saved);
       if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL){
-        currentPage=1;
-        renderItems(parse(parsed.data));
+        applyXml(parsed.data);
         $('#go').disabled=false;
         return;
       }
     }
-  }catch(_){localStorage.removeItem(cacheKey)}
+  }catch(_){localStorage.removeItem(fullKey)}
+
   try{
-    const r=await fetchWithTimeout('/api/performances?'+p.toString());
-    if(!r.ok)throw new Error('performance list failed');
-    const xml=await r.text();
-    localStorage.setItem(cacheKey,JSON.stringify({data:xml,savedAt:Date.now()}));
-    currentPage=1;
-    renderItems(parse(xml));
+    const savedFirst=localStorage.getItem(firstKey);
+    if(savedFirst){
+      const parsed=JSON.parse(savedFirst);
+      if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL) applyXml(parsed.data);
+    }
+
+    // 첫 100개는 별도 API로 즉시 표시합니다.
+    const firstRequest=fetchWithTimeout('/api/performances/first?'+p.toString());
+    const firstResponse=await firstRequest;
+    if(firstResponse.ok){
+      const firstXml=await firstResponse.text();
+      localStorage.setItem(firstKey,JSON.stringify({data:firstXml,savedAt:Date.now()}));
+      applyXml(firstXml);
+    }
   }catch(_){
-    count.textContent='';
-    grid.innerHTML='<div class="empty">공연 정보를 불러오지 못했습니다.</div>';
-    $('#movoka-pagination').innerHTML='';
-  }finally{
-    $('#go').disabled=false;
+    // 첫 페이지 요청이 실패해도 전체 목록 요청을 계속 시도합니다.
   }
+
+  // 전체 페이지 집계는 화면을 막지 않고 백그라운드에서 완료합니다.
+  fetch('/api/performances?'+p.toString())
+    .then(r=>{if(!r.ok)throw new Error('full list failed');return r.text()})
+    .then(xml=>{
+      localStorage.setItem(fullKey,JSON.stringify({data:xml,savedAt:Date.now()}));
+      applyXml(xml);
+    })
+    .catch(()=>{})
+    .finally(()=>{
+      $('#go').disabled=false;
+    });
 }
 `;
-      // 기존 HTML의 loadWithTicketFilter 호출이 이 로더를 사용하도록 교체합니다.
       html=html.replace('</script>',fastLoader+'</script>');
       const headers = new Headers(asset.headers);
       headers.delete('Content-Length');
