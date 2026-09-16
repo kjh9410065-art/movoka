@@ -6,6 +6,7 @@ const DETAIL_CONCURRENCY = 5;
 const DETAIL_CACHE_TTL = 86400;
 const LIST_CACHE_TTL = 900;
 const TICKET_BATCH_SIZE = 20;
+const LIST_PAGE_CONCURRENCY = 8;
 
 function getYmd(date) {
   // 날짜를 KOPIS가 요구하는 YYYYMMDD 형식으로 변환합니다.
@@ -26,32 +27,57 @@ function extractDb(xml) {
 }
 
 async function getAllPerformances(baseApi) {
-  // KOPIS의 페이지당 최대 100개 제한을 넘어서 실제 마지막 페이지까지 전부 가져옵니다.
+  // 첫 페이지를 확인한 뒤 나머지 페이지를 병렬로 수집해 전체 공연을 빠르게 가져옵니다.
   const all = [];
   const seen = new Set();
-  let page = 1;
 
-  while (true) {
-    const api = new URL(baseApi.toString());
-    api.searchParams.set('cpage', String(page));
-    api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
-    const xml = await proxyKopis(api);
-    const matches = extractDb(xml);
-
+  const addResults = matches => {
+    // 공연 ID를 기준으로 중복 공연을 제거합니다.
     for (const db of matches) {
-      // 공연 ID를 기준으로 중복 공연을 제거합니다.
       const id = db.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1] || '';
       if (id && !seen.has(id)) {
         seen.add(id);
         all.push(db);
       }
     }
+  };
 
-    // 100개 미만이면 실제 마지막 페이지입니다.
-    if (matches.length < KOPIS_PAGE_ROWS) break;
-    page++;
-    if (page > 100) throw new Error('KOPIS pagination limit exceeded');
+  const fetchPage = async page => {
+    // 지정한 페이지 하나를 KOPIS에서 가져옵니다.
+    const api = new URL(baseApi.toString());
+    api.searchParams.set('cpage', String(page));
+    api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
+    const xml = await proxyKopis(api);
+    return extractDb(xml);
+  };
+
+  const first = await fetchPage(1);
+  addResults(first);
+
+  // 첫 페이지가 100개 미만이면 첫 페이지가 마지막 페이지입니다.
+  if (first.length < KOPIS_PAGE_ROWS) return all;
+
+  // KOPIS 전체 건수를 별도 호출하지 않고 페이지를 8개씩 병렬 확인합니다.
+  // 100페이지를 안전상한으로 두고, 100개 미만인 페이지가 나오면 이후 페이지는 중단합니다.
+  for (let start = 2; start <= 100; start += LIST_PAGE_CONCURRENCY) {
+    const pages = Array.from(
+      { length: Math.min(LIST_PAGE_CONCURRENCY, 101 - start) },
+      (_, index) => start + index
+    );
+    const results = await Promise.all(pages.map(page => fetchPage(page)));
+    let reachedLastPage = false;
+
+    results.forEach((matches, index) => {
+      addResults(matches);
+      if (matches.length < KOPIS_PAGE_ROWS) reachedLastPage = true;
+      // 마지막 페이지가 발견된 뒤의 빈 페이지는 데이터에 추가하지 않습니다.
+      if (matches.length === 0) return;
+      void index;
+    });
+
+    if (reachedLastPage) break;
   }
+
   return all;
 }
 
@@ -145,8 +171,8 @@ export default {
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
 
-      // 새 버전의 목록 캐시를 사용합니다.
-      const listCacheKey = `v8:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      // 목록 캐시를 사용해 같은 조건의 반복 요청을 KOPIS까지 보내지 않습니다.
+      const listCacheKey = `v9:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const cachedList = await caches.default.match(cacheRequest(listCacheKey));
       if (cachedList) return cachedList;
 
@@ -228,7 +254,7 @@ export default {
     }
 
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      // 정적 HTML에 빠른 목록 로더만 주입합니다. 공연별 상세 API는 초기 로딩에서 호출하지 않습니다.
+      // 정적 HTML에 목록 로더를 주입합니다. 공연별 상세 API는 초기 로딩에서 호출하지 않습니다.
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
       const fastLoader = `
@@ -239,7 +265,7 @@ async function loadWithTicketFilter(){
   if(active)p.set('shcate',active);
   if($('#area').value)p.set('shigucodesub',$('#area').value);
   if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
-  const cacheKey='movoka-fast-list-v14:'+p.toString();
+  const cacheKey='movoka-fast-list-v15:'+p.toString();
   try{
     const saved=localStorage.getItem(cacheKey);
     if(saved){
@@ -268,7 +294,7 @@ async function loadWithTicketFilter(){
   }
 }
 `;
-      // 기존 HTML의 loadWithTicketFilter 호출이 이 빠른 로더를 사용하도록 교체합니다.
+      // 기존 HTML의 loadWithTicketFilter 호출이 이 로더를 사용하도록 교체합니다.
       html=html.replace('</script>',fastLoader+'</script>');
       const headers = new Headers(asset.headers);
       headers.delete('Content-Length');
