@@ -15,22 +15,38 @@ async function proxyKopis(api) {
 }
 
 async function getAllPerformances(baseApi) {
-  const all = [];
-  let page = 1;
+  // 첫 페이지에서 KOPIS가 알려주는 전체 검색 건수를 먼저 확인합니다.
+  const firstApi = new URL(baseApi.toString());
+  firstApi.searchParams.set('cpage', '1');
+  firstApi.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
 
-  // KOPIS의 페이지 단위만 100개로 요청하고, 전체 공연 수에는 제한을 두지 않습니다.
-  while (true) {
-    const api = new URL(baseApi.toString());
-    api.searchParams.set('cpage', String(page));
-    api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
+  const firstXml = await proxyKopis(firstApi);
+  const firstMatches = firstXml.match(/<db>[\s\S]*?<\/db>/g) || [];
+  const all = [...firstMatches];
 
-    const xml = await proxyKopis(api);
-    const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
-    all.push(...matches);
+  // totalcount가 있으면 필요한 페이지 수를 정확히 계산합니다.
+  const totalMatch = firstXml.match(/<totalcount>\s*(\d+)\s*<\/totalcount>/i);
+  const totalCount = totalMatch ? Number(totalMatch[1]) : 0;
+  const totalPages = totalCount > 0
+    ? Math.ceil(totalCount / KOPIS_PAGE_ROWS)
+    : (firstMatches.length < KOPIS_PAGE_ROWS ? 1 : 2);
 
-    // 100개보다 적으면 마지막 페이지입니다.
-    if (matches.length < KOPIS_PAGE_ROWS) break;
-    page++;
+  // 첫 페이지 이후의 모든 페이지를 가져옵니다. 총 공연 수에 100개 제한을 두지 않습니다.
+  if (totalPages > 1) {
+    const pages = await Promise.all(
+      Array.from({length: totalPages - 1}, (_, index) => {
+        const page = index + 2;
+        const api = new URL(baseApi.toString());
+        api.searchParams.set('cpage', String(page));
+        api.searchParams.set('rows', String(KOPIS_PAGE_ROWS));
+        return proxyKopis(api);
+      })
+    );
+
+    for (const xml of pages) {
+      const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
+      all.push(...matches);
+    }
   }
 
   return `<dbs>${all.join('')}</dbs>`;
@@ -62,7 +78,7 @@ export default {
         if (area) api.searchParams.set('signgucode', area);
         if (keyword) api.searchParams.set('shprfnm', keyword);
 
-        // 조건에 맞는 예매 가능 공연을 마지막 페이지까지 모두 가져옵니다.
+        // 조건에 맞는 예매 가능 공연을 전체 페이지에서 가져옵니다.
         const xml = await getAllPerformances(api);
         return new Response(xml, {
           headers: {
