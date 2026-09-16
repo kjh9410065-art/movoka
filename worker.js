@@ -5,6 +5,7 @@ const KOPIS_PAGE_ROWS = 100;
 const DETAIL_CONCURRENCY = 5;
 const DETAIL_CACHE_TTL = 86400;
 const LIST_CACHE_TTL = 900;
+const TICKET_BATCH_SIZE = 20;
 
 function getYmd(date) {
   const pad = n => String(n).padStart(2, '0');
@@ -93,31 +94,29 @@ async function hasTicketVendor(id, key) {
   });
 }
 
-async function filterBookablePerformances(performances, key) {
-  const result = [];
+async function getTicketStatuses(ids, key) {
+  // 한 Worker 요청에서는 최대 20개 공연만 확인해 Cloudflare의 외부 요청 한도를 넘지 않게 합니다.
+  const uniqueIds = [...new Set(ids)].filter(id => /^PF\d+$/.test(id)).slice(0, TICKET_BATCH_SIZE);
+  const statuses = {};
   let next = 0;
 
-  // 상세 API는 동시에 5개씩만 조회하여 KOPIS 요청 폭주를 방지합니다.
+  // 상세 API를 동시에 5개씩만 조회합니다.
   async function worker() {
     while (true) {
       const index = next++;
-      if (index >= performances.length) return;
-
-      const db = performances[index];
-      const id = db.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1] || '';
-      if (!id) continue;
-
+      if (index >= uniqueIds.length) return;
+      const id = uniqueIds[index];
       try {
-        // 예매처 URL이 등록된 공연만 최종 목록에 포함합니다.
-        if (await hasTicketVendor(id, key)) result.push(db);
+        statuses[id] = await hasTicketVendor(id, key);
       } catch (_) {
-        // 상세 조회 실패 공연은 예매 가능 여부를 확인할 수 없으므로 제외합니다.
+        // 확인 실패는 예매 가능으로 간주하지 않습니다.
+        statuses[id] = false;
       }
     }
   }
 
-  await Promise.all(Array.from({length: Math.min(DETAIL_CONCURRENCY, performances.length)}, worker));
-  return result;
+  await Promise.all(Array.from({length: Math.min(DETAIL_CONCURRENCY, uniqueIds.length)}, worker));
+  return statuses;
 }
 
 export default {
@@ -128,8 +127,8 @@ export default {
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
 
-      // 캐시 버전으로 기존 결과를 우회하고 새 수집 로직을 사용합니다.
-      const listCacheKey = `v3:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      // 목록 자체는 예매처 상세조회와 분리해 100개 초과 공연도 끝까지 수집합니다.
+      const listCacheKey = `v4:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const cachedList = await caches.default.match(cacheRequest(listCacheKey));
       if (cachedList) return cachedList;
 
@@ -144,7 +143,7 @@ export default {
         baseApi.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
 
         const genre = url.searchParams.get('shcate') || '';
-        const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || '';
+        const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || url.searchParams.get('shigucodesub') || '';
         const keyword = url.searchParams.get('shprfnm') || '';
         if (genre) baseApi.searchParams.set('shcate', genre);
         if (area) baseApi.searchParams.set('signgucode', area);
@@ -162,9 +161,8 @@ export default {
           }
         }
 
-        // 현재 예매처가 등록된 공연만 최종 목록으로 확정합니다.
-        const bookable = await filterBookablePerformances(Array.from(merged.values()), key);
-        const xml = `<dbs>${bookable.join('')}</dbs>`;
+        // 예매처 상세조회는 별도 배치 API에서 처리하므로 여기서는 전체 공연을 그대로 반환합니다.
+        const xml = `<dbs>${Array.from(merged.values()).join('')}</dbs>`;
         const response = new Response(xml, {
           headers: {
             'Content-Type': 'application/xml; charset=utf-8',
@@ -172,11 +170,30 @@ export default {
           }
         });
 
-        // 검색조건별 전체 결과를 캐시하여 화면 페이지 이동에서는 KOPIS를 다시 호출하지 않습니다.
+        // 검색조건별 전체 결과를 캐시합니다.
         await caches.default.put(cacheRequest(listCacheKey), response.clone());
         return response;
       } catch (_) {
         return Response.json({error:'KOPIS request failed'}, {status:502});
+      }
+    }
+
+    if (url.pathname === '/api/ticket-status') {
+      if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
+
+      // 브라우저가 20개 단위로 예매처 상태를 확인할 수 있게 합니다.
+      const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean);
+      if (!ids.length || ids.length > TICKET_BATCH_SIZE) {
+        return Response.json({error:`ids must contain 1-${TICKET_BATCH_SIZE} performance IDs`}, {status:400});
+      }
+
+      try {
+        const statuses = await getTicketStatuses(ids, key);
+        return Response.json({statuses}, {
+          headers: {'Cache-Control': 'public, max-age=900'}
+        });
+      } catch (_) {
+        return Response.json({error:'Ticket status request failed'}, {status:502});
       }
     }
 
@@ -207,18 +224,58 @@ export default {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
 
-      // 새 목록 API 캐시 버전이 적용되도록 브라우저의 이전 캐시 키를 무효화합니다.
-      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v3:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v4:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v5:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v6:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v7:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v8:', 'movoka-performances-cache-v10:');
-      html = html.replaceAll('movoka-performances-cache-v9:', 'movoka-performances-cache-v10:');
+      // 새 목록과 예매상태 캐시 버전을 적용합니다.
+      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v11:');
+      for (let i = 2; i <= 10; i++) html = html.replaceAll(`movoka-performances-cache-v${i}:`, 'movoka-performances-cache-v11:');
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
+
+      // 목록은 전부 가져온 뒤 브라우저가 20개씩 예매처 상태를 확인합니다.
+      // 이렇게 해야 100개를 넘는 공연도 Cloudflare Worker의 단일 요청 한도를 넘지 않습니다.
+      const ticketLoader = `
+async function loadWithTicketFilter(){
+  grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
+  $('#go').disabled=true;
+  const p=new URLSearchParams({rows:'100',ticketable:'1'});
+  if(active)p.set('shcate',active);
+  if($('#area').value)p.set('shigucodesub',$('#area').value);
+  if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
+  const rawKey='movoka-performances-raw-cache-v11:'+p.toString();
+  const bookableKey='movoka-performances-bookable-cache-v1:'+p.toString();
+  let rawXml=null;
+  let cachedBookable=null;
+  try{
+    const savedBookable=localStorage.getItem(bookableKey);
+    if(savedBookable){const parsed=JSON.parse(savedBookable);if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL)cachedBookable=parse(parsed.data);}
+  }catch(_){localStorage.removeItem(bookableKey)}
+  if(cachedBookable){currentPage=1;renderItems(cachedBookable);$('#go').disabled=false;return}
+  try{
+    const savedRaw=localStorage.getItem(rawKey);
+    if(savedRaw){const parsed=JSON.parse(savedRaw);if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL)rawXml=parsed.data;}
+    if(!rawXml){
+      const r=await fetchWithTimeout('/api/performances?'+p.toString());
+      if(!r.ok)throw new Error();
+      rawXml=await r.text();
+      localStorage.setItem(rawKey,JSON.stringify({data:rawXml,savedAt:Date.now()}));
+    }
+    const all=parse(rawXml);
+    const ids=all.map(x=>x.mt20id).filter(Boolean);
+    const bookable=[];
+    for(let i=0;i<ids.length;i+=20){
+      const batch=ids.slice(i,i+20);
+      const r=await fetchWithTimeout('/api/ticket-status?ids='+encodeURIComponent(batch.join(',')));
+      if(!r.ok)continue;
+      const data=await r.json();
+      const statuses=data.statuses||{};
+      for(const item of all.filter(x=>batch.includes(x.mt20id))){if(statuses[item.mt20id]===true)bookable.push(item)}
+      count.textContent='예매 가능한 공연 확인 중... '+Math.min(i+20,ids.length)+' / '+ids.length;
+    }
+    localStorage.setItem(bookableKey,JSON.stringify({data:'<dbs>'+bookable.map(x=>'<db><mt20id>'+x.mt20id+'</mt20id><prfnm>'+esc(x.prfnm)+'</prfnm><prfpdfrom>'+esc(x.prfpdfrom)+'</prfpdfrom><prfpdto>'+esc(x.prfpdto)+'</prfpdto><fcltynm>'+esc(x.fcltynm)+'</fcltynm><poster>'+esc(x.poster)+'</poster><genrenm>'+esc(x.genrenm)+'</genrenm><prfcast>'+esc(x.prfcast)+'</prfcast><prfurl>'+esc(x.prfurl)+'</prfurl></db>').join('')+'</dbs>',savedAt:Date.now()}));
+    currentPage=1;renderItems(bookable);
+  }catch(e){count.textContent='';grid.innerHTML='<div class="empty">공연 정보를 불러오지 못했습니다.</div>';$('#movoka-pagination').innerHTML=''}finally{$('#go').disabled=false}
+}
+`;
+      html = html.replace('load();\n</script>', ticketLoader + 'loadWithTicketFilter();\n</script>');
 
       const headers = new Headers(asset.headers);
       headers.delete('Content-Length');
