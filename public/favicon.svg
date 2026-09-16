@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- MOVOKA 파비콘: 작은 화면에서도 식별되는 단순한 M 로고 -->
+  <rect width="64" height="64" rx="14" fill="#5b5bd6"/>
+  <path d="M14 45V19h7l11 14 11-14h7v26h-7V30L32 44 21 30v15z" fill="#fff"/>
+</svg>
