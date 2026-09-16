@@ -16,9 +16,10 @@ async function proxyKopis(api) {
 
 async function getAllPerformances(baseApi) {
   const all = [];
+  let page = 1;
 
-  // KOPIS는 한 번에 최대 100개이므로, 다음 페이지가 없을 때까지 계속 가져옵니다.
-  for (let page = 1; page <= 100; page++) {
+  // 공연 수에 인위적인 상한을 두지 않고 KOPIS의 마지막 페이지까지 모두 가져옵니다.
+  while (true) {
     const api = new URL(baseApi.toString());
     api.searchParams.set('cpage', String(page));
     api.searchParams.set('rows', String(FETCH_ROWS));
@@ -27,8 +28,9 @@ async function getAllPerformances(baseApi) {
     const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
     all.push(...matches);
 
-    // 100개보다 적으면 마지막 페이지입니다.
+    // 현재 페이지가 100개보다 적으면 KOPIS의 마지막 페이지입니다.
     if (matches.length < FETCH_ROWS) break;
+    page++;
   }
 
   return `<dbs>${all.join('')}</dbs>`;
