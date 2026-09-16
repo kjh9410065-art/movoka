@@ -1,0 +1,6 @@
+# MOVOKA robots.txt
+# Search engines may crawl the public service pages.
+User-agent: *
+Allow: /
+
+Sitemap: https://movoka.tcflick.com/sitemap.xml
