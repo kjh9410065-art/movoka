@@ -4,7 +4,7 @@ const ROWS = 100; // KOPIS 전체 목록 조회에 사용하는 최대 페이지
 const FIRST_ROWS = 28; // 첫 화면에는 실제 표시량만 받아 초기 응답을 줄입니다.
 const LIST_CACHE_TTL = 900; // 전체 목록 캐시 시간은 15분입니다.
 const DETAIL_CACHE_TTL = 86400; // 상세 공연 캐시는 24시간입니다.
-const PAGE_CONCURRENCY = 8; // 전체 목록을 가져올 때 동시에 조회할 페이지 수입니다.
+const PAGE_CONCURRENCY = 4; // 한 번의 전체 목록 요청에서 동시에 조회할 페이지 수를 줄여 KOPIS 과부하를 방지합니다.
 const TICKET_BATCH_SIZE = 20; // 예매처 확인 요청의 최대 공연 수입니다.
 const DETAIL_CONCURRENCY = 5; // 예매처 상세정보를 동시에 조회할 수입니다.
 function ymd(date) { const pad = n => String(n).padStart(2, '0'); return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`; } // 날짜를 KOPIS 형식으로 변환합니다.
@@ -16,12 +16,12 @@ function dbs(xml) { return xml.match(/<db>[\s\S]*?<\/db>/g) || []; } // XML에�
 function idOf(db) { return db.match(/<mt20id>[\s\S]*?<\/mt20id>/)?.[1] || ''; } // 공연 ID를 추출합니다.
 function baseApi(url, key) { const now = new Date(); const end = new Date(now); end.setDate(end.getDate() + 30); const api = new URL('https://kopis.or.kr/openApi/restful/pblprfr'); api.searchParams.set('service', key); api.searchParams.set('stdate', url.searchParams.get('stdate') || ymd(now)); api.searchParams.set('eddate', url.searchParams.get('eddate') || ymd(end)); const genre = url.searchParams.get('shcate') || ''; const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || url.searchParams.get('shigucodesub') || ''; const keyword = url.searchParams.get('shprfnm') || ''; if (genre) api.searchParams.set('shcate', genre); if (area) api.searchParams.set('signgucode', area); if (keyword) api.searchParams.set('shprfnm', keyword); return api; } // 프론트 조건을 KOPIS URL로 변환합니다.
 async function firstPage(api, rows = FIRST_ROWS) { api = new URL(api.toString()); api.searchParams.set('cpage', '1'); api.searchParams.set('rows', String(Math.min(FIRST_ROWS, Math.max(1, Number(rows) || FIRST_ROWS)))); return kopis(api); } // 첫 페이지를 조회합니다.
-async function allPages(api) { const all = []; const seen = new Set(); const add = items => { for (const db of items) { const id = idOf(db); if (id && !seen.has(id)) { seen.add(id); all.push(db); } } }; const getPage = async page => { const request = new URL(api.toString()); request.searchParams.set('cpage', String(page)); request.searchParams.set('rows', String(ROWS)); return dbs(await kopis(request)); }; const first = await getPage(1); add(first); if (first.length < ROWS) return all; for (let start = 2; start <= 100; start += PAGE_CONCURRENCY) { const pages = Array.from({length: Math.min(PAGE_CONCURRENCY, 101 - start)}, (_, i) => start + i); const results = await Promise.all(pages.map(getPage)); let last = false; for (const items of results) { add(items); if (items.length < ROWS) last = true; } if (last) break; } return all; } // 전체 페이지를 병렬 수집합니다.
+async function allPages(api) { const all = []; const seen = new Set(); const add = items => { for (const db of items) { const id = idOf(db); if (id && !seen.has(id)) { seen.add(id); all.push(db); } } }; const getPage = async page => { const request = new URL(api.toString()); request.searchParams.set('cpage', String(page)); request.searchParams.set('rows', String(ROWS)); return dbs(await kopis(request)); }; const first = await getPage(1); add(first); if (first.length < ROWS) return all; for (let start = 2; start <= 100; start += PAGE_CONCURRENCY) { const pages = Array.from({length: Math.min(PAGE_CONCURRENCY, 101 - start)}, (_, i) => start + i); const results = await Promise.all(pages.map(getPage)); let last = false; for (const items of results) { add(items); if (items.length < ROWS) last = true; } if (last) break; } return all; } // 전체 목록을 수집합니다.
 async function ticketStatus(ids, key) { const unique = [...new Set(ids)].filter(id => /^PF\d+$/.test(id)).slice(0, TICKET_BATCH_SIZE); const result = {}; let cursor = 0; const worker = async () => { while (cursor < unique.length) { const id = unique[cursor++]; try { const api = new URL(`https://kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`); api.searchParams.set('service', key); const url = api.toString(); const xml = (await cachedText(url)) || await kopis(api); await saveText(url, xml, DETAIL_CACHE_TTL); const urls = xml.match(/<relateurl>[\s\S]*?<\/relateurl>/g) || []; result[id] = urls.some(v => /^https?:\/\//i.test(v.replace(/<\/?relateurl>/g, '').trim())); } catch (_) { result[id] = false; } } }; await Promise.all(Array.from({length: Math.min(DETAIL_CONCURRENCY, unique.length)}, worker)); return result; } // 예매처 상태를 확인합니다.
 export default { async fetch(request, env) { const url = new URL(request.url); const key = env.KOPIS_API_KEY; if (!key) return Response.json({error: 'KOPIS_API_KEY is not configured'}, {status: 500});
 if (url.pathname === '/api/debug-kopis') { try { const api = baseApi(url, key); api.searchParams.set('cpage', '1'); api.searchParams.set('rows', '1'); const xml = await kopis(api); return Response.json({ok: true, host: 'kopis.or.kr', dbCount: dbs(xml).length, responseLength: xml.length}); } catch (error) { return Response.json({ok: false, error: String(error?.message || error).slice(0, 200)}, {status: 502}); } }
-if (url.pathname === '/api/performances/first') { const keyUrl = `first-v7:${url.origin}${url.pathname}?${url.searchParams.toString()}`; const hit = await caches.default.match(cacheKey(keyUrl)); if (hit) return hit; try { const xml = await firstPage(baseApi(url, key), FIRST_ROWS); const response = new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300'}}); await caches.default.put(cacheKey(keyUrl), response.clone()); return response; } catch (error) { return Response.json({error: String(error?.message || error).slice(0, 200)}, {status: 502}); } }
-if (url.pathname === '/api/performances') { const keyUrl = `full-v15:${url.origin}${url.pathname}?${url.searchParams.toString()}`; const hit = await caches.default.match(cacheKey(keyUrl)); if (hit) return hit; try { const items = await allPages(baseApi(url, key)); const xml = `<dbs>${items.join('')}</dbs>`; const response = new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': `public, max-age=${LIST_CACHE_TTL}`}}); await caches.default.put(cacheKey(keyUrl), response.clone()); return response; } catch (error) { return Response.json({error: String(error?.message || error).slice(0, 200)}, {status: 502}); } }
+if (url.pathname === '/api/performances/first') { const keyUrl = `first-v8:${url.origin}${url.pathname}?${url.searchParams.toString()}`; const hit = await caches.default.match(cacheKey(keyUrl)); if (hit) return hit; try { const xml = await firstPage(baseApi(url, key), FIRST_ROWS); const response = new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=300'}}); await caches.default.put(cacheKey(keyUrl), response.clone()); return response; } catch (error) { return Response.json({error: String(error?.message || error).slice(0, 200)}, {status: 502}); } }
+if (url.pathname === '/api/performances') { const keyUrl = `full-v16:${url.origin}${url.pathname}?${url.searchParams.toString()}`; const hit = await caches.default.match(cacheKey(keyUrl)); if (hit) return hit; try { const items = await allPages(baseApi(url, key)); const xml = `<dbs>${items.join('')}</dbs>`; const response = new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': `public, max-age=${LIST_CACHE_TTL}`}}); await caches.default.put(cacheKey(keyUrl), response.clone()); return response; } catch (error) { return Response.json({error: String(error?.message || error).slice(0, 200)}, {status: 502}); } }
 if (url.pathname === '/api/ticket-status') { const ids = (url.searchParams.get('ids') || '').split(',').filter(Boolean); if (!ids.length || ids.length > TICKET_BATCH_SIZE) return Response.json({error: `ids must contain 1-${TICKET_BATCH_SIZE} performance IDs`}, {status: 400}); try { return Response.json({statuses: await ticketStatus(ids, key)}, {headers: {'Cache-Control': 'public, max-age=900'}}); } catch (_) { return Response.json({error: 'Ticket status request failed'}, {status: 502}); } }
 if (url.pathname === '/api/performance') { const id = url.searchParams.get('mt20id'); if (!id || !/^PF\d+$/.test(id)) return Response.json({error: 'Invalid mt20id'}, {status: 400}); try { const api = new URL(`https://kopis.or.kr/openApi/restful/pblprfr/${encodeURIComponent(id)}`); api.searchParams.set('service', key); const apiUrl = api.toString(); const xml = (await cachedText(apiUrl)) || await kopis(api); await saveText(apiUrl, xml, DETAIL_CACHE_TTL); return new Response(xml, {headers: {'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': `public, max-age=${DETAIL_CACHE_TTL}`}}); } catch (_) { return Response.json({error: 'KOPIS request failed'}, {status: 502}); } }
 if (url.pathname === '/' || url.pathname === '/index.html') { const asset = await env.ASSETS.fetch(request); let html = await asset.text(); const loader = `
@@ -29,11 +29,10 @@ async function loadWithTicketFilter(){
   // 검색 버튼을 잠그고 초기 로딩 상태를 표시합니다.
   $('#go').disabled=true; grid.innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';
   const p=new URLSearchParams({rows:'28'}); if(active)p.set('shcate',active); if($('#area').value)p.set('shigucodesub',$('#area').value); if($('#q').value.trim())p.set('shprfnm',$('#q').value.trim());
-  const firstKey='movoka-first-list-v7:'+p.toString();
+  const firstKey='movoka-first-list-v8:'+p.toString();
   const apply=xml=>{currentPage=1;renderItems(parse(xml));};
-  // 대용량 전체 XML은 localStorage에 저장하지 않습니다. 브라우저 저장용량 초과가 초기 렌더링을 막지 않게 합니다.
   try{ const saved=localStorage.getItem(firstKey); if(saved){ const parsed=JSON.parse(saved); if(Date.now()-Number(parsed.savedAt||0)<CACHE_TTL)apply(parsed.data); else localStorage.removeItem(firstKey); } }catch(_){ try{localStorage.removeItem(firstKey);}catch(__){} }
-  // 첫 페이지 요청은 별도의 8초 타이머를 사용해 로딩이 무한정 유지되지 않게 합니다.
+  // 첫 화면은 전체 목록 수집과 분리해서 요청합니다. 대량 조회가 초기 화면을 방해하지 않도록 합니다.
   try{
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort(),8000);
@@ -44,13 +43,15 @@ async function loadWithTicketFilter(){
     const xml=await response.text();
     apply(xml);
     try{localStorage.setItem(firstKey,JSON.stringify({data:xml,savedAt:Date.now()}));}catch(_){ }
-    $('#go').disabled=false;
   }catch(error){
     if(!lastItems.length)grid.innerHTML='<div class="empty">공연 정보를 불러오지 못했습니다.<br><button class="primary" style="margin-top:14px;padding:10px 16px" onclick="loadWithTicketFilter()">다시 시도</button></div>';
+  }finally{
     $('#go').disabled=false;
   }
-  // 전체 목록은 초기 화면을 막지 않고 백그라운드에서 완성합니다.
-  fetch('/api/performances?'+p.toString(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('full list failed');return r.text();}).then(xml=>{apply(xml);}).catch(()=>{});
+  // 전체 목록은 초기 화면과 분리해 잠시 후 시작합니다. KOPIS에 순간적으로 대량 요청이 몰리는 것을 막습니다.
+  setTimeout(()=>{
+    fetch('/api/performances?'+p.toString(),{cache:'no-store'}).then(r=>{if(!r.ok)throw new Error('full list failed');return r.text();}).then(xml=>{apply(xml);}).catch(()=>{});
+  },5000);
 }
 // 페이지가 로드되면 공연 목록 조회를 자동으로 시작합니다.
 loadWithTicketFilter().catch(()=>{
