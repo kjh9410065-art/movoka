@@ -40,7 +40,7 @@ async function getAllPerformances(baseApi) {
       }
     }
 
-    // 100개보다 적으면 실제 마지막 페이지입니다.
+    // 100개보다 적으면 해당 상태의 실제 마지막 페이지입니다.
     if (matches.length < KOPIS_PAGE_ROWS) break;
     page++;
   }
@@ -61,23 +61,32 @@ export default {
         const end = new Date(now);
         end.setDate(end.getDate() + 30);
 
-        const api = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
-        api.searchParams.set('service', key);
-        api.searchParams.set('stdate', url.searchParams.get('stdate') || getYmd(now));
-        api.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
-        // 예매 가능한 공연 상태로 조회합니다.
-        api.searchParams.set('prfstate', '02');
+        const baseApi = new URL('https://www.kopis.or.kr/openApi/restful/pblprfr');
+        baseApi.searchParams.set('service', key);
+        baseApi.searchParams.set('stdate', url.searchParams.get('stdate') || getYmd(now));
+        baseApi.searchParams.set('eddate', url.searchParams.get('eddate') || getYmd(end));
 
         const genre = url.searchParams.get('shcate') || '';
         const area = url.searchParams.get('signgucode') || url.searchParams.get('signgucodesub') || '';
         const keyword = url.searchParams.get('shprfnm') || '';
-        if (genre) api.searchParams.set('shcate', genre);
-        if (area) api.searchParams.set('signgucode', area);
-        if (keyword) api.searchParams.set('shprfnm', keyword);
+        if (genre) baseApi.searchParams.set('shcate', genre);
+        if (area) baseApi.searchParams.set('signgucode', area);
+        if (keyword) baseApi.searchParams.set('shprfnm', keyword);
 
-        // 조건에 맞는 전체 공연을 마지막 페이지까지 가져옵니다.
-        const performances = await getAllPerformances(api);
-        const xml = `<dbs>${performances.join('')}</dbs>`;
+        // KOPIS의 공연상태 01=공연예정, 02=공연중이므로 두 상태를 모두 수집합니다.
+        const merged = new Map();
+        for (const state of ['01', '02']) {
+          const api = new URL(baseApi.toString());
+          api.searchParams.set('prfstate', state);
+          const performances = await getAllPerformances(api);
+          for (const db of performances) {
+            const id = db.match(/<mt20id>([\s\S]*?)<\/mt20id>/)?.[1] || '';
+            if (id && !merged.has(id)) merged.set(id, db);
+          }
+        }
+
+        // 조건에 맞는 공연을 중복 없이 모두 반환합니다.
+        const xml = `<dbs>${Array.from(merged.values()).join('')}</dbs>`;
 
         return new Response(xml, {
           headers: {
@@ -115,10 +124,11 @@ export default {
       let html = await asset.text();
 
       // 기존 캐시를 우회하여 새 전체 데이터를 다시 받게 합니다.
-      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v5:');
-      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v5:');
-      html = html.replaceAll('movoka-performances-cache-v3:', 'movoka-performances-cache-v5:');
-      html = html.replaceAll('movoka-performances-cache-v4:', 'movoka-performances-cache-v5:');
+      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v6:');
+      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v6:');
+      html = html.replaceAll('movoka-performances-cache-v3:', 'movoka-performances-cache-v6:');
+      html = html.replaceAll('movoka-performances-cache-v4:', 'movoka-performances-cache-v6:');
+      html = html.replaceAll('movoka-performances-cache-v5:', 'movoka-performances-cache-v6:');
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
