@@ -108,9 +108,11 @@ async function filterBookablePerformances(performances, key) {
       if (!id) continue;
 
       try {
+        // 예매처 URL이 확인된 공연만 우선 통과시킵니다.
         if (await hasTicketVendor(id, key)) result.push(db);
       } catch (_) {
-        // 상세 조회 실패 공연은 예매 가능 여부를 확인할 수 없으므로 제외합니다.
+        // 상세 API 일시 오류로 전체 목록이 사라지지 않도록 원본 공연은 유지합니다.
+        result.push(db);
       }
     }
   }
@@ -127,8 +129,8 @@ export default {
     if (url.pathname === '/api/performances') {
       if (!key) return Response.json({error:'KOPIS_API_KEY is not configured'}, {status:500});
 
-      // 동일한 검색조건의 결과는 15분간 캐시하여 KOPIS 재조회와 상세조회 폭증을 막습니다.
-      const listCacheKey = `${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      // 캐시 버전으로 기존에 잘못 저장된 빈 결과를 즉시 우회합니다.
+      const listCacheKey = `v2:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const cachedList = await caches.default.match(cacheRequest(listCacheKey));
       if (cachedList) return cachedList;
 
@@ -161,7 +163,7 @@ export default {
           }
         }
 
-        // KOPIS 상세정보에 실제 예매처 URL이 등록된 공연만 예매 라인업으로 사용합니다.
+        // 예매처가 확인된 공연을 우선 사용하되, 상세 API 오류 때문에 전체가 0건이 되는 것은 막습니다.
         const bookable = await filterBookablePerformances(Array.from(merged.values()), key);
         const xml = `<dbs>${bookable.join('')}</dbs>`;
         const response = new Response(xml, {
@@ -206,14 +208,15 @@ export default {
       const asset = await env.ASSETS.fetch(request);
       let html = await asset.text();
 
-      // 예매 가능 필터가 적용된 새 데이터를 다시 받도록 기존 브라우저 캐시를 모두 무효화합니다.
-      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v8:');
-      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v8:');
-      html = html.replaceAll('movoka-performances-cache-v3:', 'movoka-performances-cache-v8:');
-      html = html.replaceAll('movoka-performances-cache-v4:', 'movoka-performances-cache-v8:');
-      html = html.replaceAll('movoka-performances-cache-v5:', 'movoka-performances-cache-v8:');
-      html = html.replaceAll('movoka-performances-cache-v6:', 'movoka-performances-cache-v8:');
-      html = html.replaceAll('movoka-performances-cache-v7:', 'movoka-performances-cache-v8:');
+      // 새 API 캐시 버전이 적용되도록 기존 브라우저 캐시 키를 무효화합니다.
+      html = html.replaceAll('movoka-performances-cache:', 'movoka-performances-cache-v9:');
+      html = html.replaceAll('movoka-performances-cache-v2:', 'movoka-performances-cache-v9:');
+      html = html.replaceAll('movoka-performances-cache-v3:', 'movoka-performances-cache-v9:');
+      html = html.replaceAll('movoka-performances-cache-v4:', 'movoka-performances-cache-v9:');
+      html = html.replaceAll('movoka-performances-cache-v5:', 'movoka-performances-cache-v9:');
+      html = html.replaceAll('movoka-performances-cache-v6:', 'movoka-performances-cache-v9:');
+      html = html.replaceAll('movoka-performances-cache-v7:', 'movoka-performances-cache-v9:');
+      html = html.replaceAll('movoka-performances-cache-v8:', 'movoka-performances-cache-v9:');
       html = html.replace(/(<button[^>]*class=["'][^"']*ticket[^"']*["'][^>]*>)(예매|예매처 비교|예매 사이트)(<\/button>)/gi, '$1예매 사이트$3');
       html = html.replace(/>(예매|예매처 비교)<\/button>/g, '>예매 사이트</button>');
 
