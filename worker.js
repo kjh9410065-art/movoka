@@ -55,9 +55,8 @@ async function getAllPerformances(baseApi) {
 }
 
 function hasBookableTicket(xml) {
-  // KOPIS 상세정보의 예매처 목록(relates)에 실제 URL이 있는 공연만 예매 가능 공연으로 봅니다.
-  const relates = xml.match(/<relate>[\s\S]*?<\/relate>/g) || [];
-  return relates.some(relate => /<relateurl>https?:\/\//i.test(relate));
+  // KOPIS 상세정보의 예매처 목록에서 실제 URL이 있는 공연만 예매 가능 공연으로 봅니다.
+  return /<relateurl>https?:\/\//i.test(xml);
 }
 
 async function filterBookablePerformances(dbList, baseApi) {
