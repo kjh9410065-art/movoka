@@ -17,7 +17,7 @@
 <section class="hero"><h1>지금 볼 공연,<br>한곳에서 찾기.</h1><p>현재 공연 중이거나 공연 예정인 작품을 구분해서 보여드립니다.</p><div class="search"><input id="q" placeholder="공연명 검색"><button id="search">검색</button></div></section>
 <div class="tabs"><button class="tab active" data-tab="current">현재 공연 <span id="currentCount">0</span></button><button class="tab" data-tab="upcoming">공연 예정 <span id="upcomingCount">0</span></button></div>
 <div class="chips" id="chips"></div>
-<div class="bar"><strong id="count">공연 정보를 불러오는 중...</strong><span>공식 KOPIS 데이터</span></div>
+<div class="bar"><strong id="count">공연 정보를 불러오는 중...</strong><span id="updated">데이터 갱신 확인 중</span></div>
 <section class="grid" id="grid"><div class="empty">공연 정보를 불러오는 중입니다.</div></section>
 <div class="pager" id="pager"></div>
 </main>
@@ -30,12 +30,12 @@ const $=id=>document.getElementById(id);
 
 // 장르 버튼을 화면에 만듭니다.
 $('chips').innerHTML=categories.map((c,i)=>`<button class="chip ${i===0?'active':''}" data-id="${c[0]}">${c[1]}</button>`).join('');
-$('chips').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;active=b.dataset.id;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));load()};
+$('chips').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;active=b.dataset.id;document.querySelectorAll('.chip').forEach(x=>x.classList.toggle('active',x===b));filterData()};
 
 // 현재 공연과 공연 예정 탭을 전환합니다.
 document.querySelector('.tabs').onclick=e=>{const b=e.target.closest('.tab');if(!b)return;tab=b.dataset.tab;page=1;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));render()};
-$('search').onclick=()=>load();
-$('q').onkeydown=e=>{if(e.key==='Enter')load()};
+$('search').onclick=filterData;
+$('q').onkeydown=e=>{if(e.key==='Enter')filterData()};
 
 // HTML 특수문자를 안전하게 표시합니다.
 function esc(v){return String(v||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
@@ -43,22 +43,22 @@ function esc(v){return String(v||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&l
 // 공연 카드를 만듭니다.
 function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button>${x.prfurl?`<button onclick="window.open('${esc(x.prfurl)}','_blank','noopener')">예매</button>`:''}</div></div></article>`}
 
-// 현재 선택된 탭의 공연만 28개씩 보여줍니다.
+// 선택된 탭의 공연을 28개씩 화면에 표시합니다.
 function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>';$('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
 
-// 페이지 이동은 다시 KOPIS를 호출하지 않고 이미 받은 데이터를 사용합니다.
+// 페이지 이동은 서버나 KOPIS를 다시 호출하지 않고 메모리에 받은 데이터를 사용합니다.
 function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager').innerHTML=Array.from({length:totalPages},(_,i)=>`<button class="page ${i+1===page?'active':''}" data-page="${i+1}">${i+1}</button>`).join('');$('pager').onclick=e=>{const b=e.target.closest('.page');if(!b)return;page=Number(b.dataset.page);render();scrollTo({top:0,behavior:'smooth'})}}
 
-// KOPIS의 공연 상태를 기준으로 현재 공연과 예정 공연을 분리합니다.
-function splitItems(items){const current=[],upcoming=[];for(const item of items){if(item.prfstate==='01')upcoming.push(item);else if(item.prfstate==='02')current.push(item)}return {current,upcoming}}
+// 장르와 검색어를 이미 받아둔 전체 데이터에 적용합니다.
+function filterData(){const keyword=$('q').value.trim().toLowerCase();const filter=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').toLowerCase().includes(keyword)));allCurrent=filter(window.__rawCurrent||[]);allUpcoming=filter(window.__rawUpcoming||[]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}
 
-// KOPIS 데이터를 100개씩 끝까지 받아 현재 공연과 예정 공연으로 나눕니다.
-async function load(){page=1;allCurrent=[];allUpcoming=[];$('grid').innerHTML='<div class="empty">공연 정보를 불러오는 중입니다.</div>';$('count').textContent='공연 정보를 불러오는 중...';const q=new URLSearchParams();if(active)q.set('shcate',active);if($('q').value.trim())q.set('shprfnm',$('q').value.trim());try{for(let p=1;p<=100;p++){q.set('page',p);q.set('rows',100);const r=await fetch('/api/performances?'+q.toString(),{cache:'no-store'});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.error||'공연 목록 요청 실패');const split=splitItems(data.items||[]);allCurrent.push(...split.current);allUpcoming.push(...split.upcoming);if(data.count<100)break}$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
+// 저장된 일일 데이터 파일을 한 번만 읽습니다. 페이지 이동에는 네트워크 요청이 없습니다.
+async function load(){try{const response=await fetch('/data/performances.json',{cache:'no-store'});const data=await response.json();if(!response.ok||!data||!Array.isArray(data.items))throw new Error('저장된 공연 데이터가 없습니다.');window.__rawCurrent=data.current||[];window.__rawUpcoming=data.upcoming||[];$('updated').textContent=data.updatedAt?`마지막 갱신 ${new Date(data.updatedAt).toLocaleString('ko-KR')}`:'갱신 대기 중';filterData()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
 
-// 공연 상세정보를 KOPIS에서 받아 간단히 표시합니다.
+// 공연 상세정보는 사용자가 상세보기를 누를 때만 Worker API를 호출합니다.
 async function detail(id){const r=await fetch('/api/performance?mt20id='+encodeURIComponent(id));const text=await r.text();if(!r.ok){alert(text);return}const doc=new DOMParser().parseFromString(text,'text/xml');const get=t=>doc.querySelector(t)?.textContent||'';alert(`${get('prfnm')}\n\n${get('prfpdfrom')} ~ ${get('prfpdto')}\n${get('fcltynm')}\n\n${get('prfcast')}`)}
 
-// 페이지가 열리면 전체 공연 데이터를 조회합니다.
+// 페이지가 열리면 저장된 일일 데이터만 읽습니다.
 load();
 </script>
 </body>
