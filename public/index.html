@@ -53,14 +53,17 @@ function esc(v){return String(v||'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&
 // 외부 HTTP/HTTPS 주소만 허용하고 MOVOKA 자체 주소는 제외합니다.
 function validBookingUrl(url){try{const value=String(url||'').trim();if(!value)return '';const parsed=new URL(value,location.href);if(!/^https?:$/.test(parsed.protocol))return '';if(parsed.origin===location.origin)return '';return parsed.href}catch{return ''}}
 
+// URL에서 사람이 읽을 수 있는 예매사이트 이름을 추출합니다.
+function bookingSiteName(url){try{const host=new URL(url).hostname.replace(/^www\./,'').toLowerCase();const names={'ticket.interpark.com':'인터파크 티켓','tickets.interpark.com':'인터파크 티켓','ticket.yes24.com':'YES24 티켓','tickets.yes24.com':'YES24 티켓','ticketlink.co.kr':'티켓링크','www.ticketlink.co.kr':'티켓링크','melonticket.com':'멜론티켓','ticket.melon.com':'멜론티켓','tickets.interpark.com':'인터파크 티켓','lotteconcerthall.com':'롯데콘서트홀','sac.or.kr':'예술의전당','tickets.com':'Tickets.com'};if(names[host])return names[host];const parts=host.split('.');return parts.length>=2?parts[parts.length-2].toUpperCase():host.toUpperCase()}catch{return '예매사이트'}}
+
 // 예매사이트 하나를 새 탭으로 엽니다. 현재 MOVOKA 탭은 그대로 유지합니다.
 function openBooking(url){const href=validBookingUrl(url);if(!href){alert('등록된 외부 예매사이트가 없습니다.');return}window.open(href,'_blank','noopener,noreferrer')}
 
-// 여러 예매처를 팝업에 표시합니다.
+// 여러 예매처를 실제 사이트 이름으로 표시합니다.
 function showBookingList(urls){
   const unique=[...new Set(urls.map(validBookingUrl).filter(Boolean))];
   if(!unique.length){alert('등록된 외부 예매사이트가 없습니다.');return}
-  $('bookingLinks').innerHTML=unique.map((url,i)=>`<button onclick="openBooking('${esc(url)}');closeBookingList()">예매사이트 ${i+1}</button>`).join('');
+  $('bookingLinks').innerHTML=unique.map(url=>`<button onclick="openBooking('${esc(url)}');closeBookingList()">${esc(bookingSiteName(url))}</button>`).join('');
   $('bookingList').style.display='flex';
 }
 
