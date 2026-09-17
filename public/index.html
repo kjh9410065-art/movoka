@@ -40,13 +40,13 @@ $('q').onkeydown=e=>{if(e.key==='Enter')filterData()};
 // HTML 특수문자를 안전하게 표시합니다.
 function esc(v){return String(v||'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]))}
 
-// 예매사이트 주소가 실제 외부 HTTP/HTTPS 주소인지 확인합니다.
-function validBookingUrl(url){try{const value=String(url||'').trim();if(!value)return '';const parsed=new URL(value);return /^https?:$/.test(parsed.protocol)?parsed.href:''}catch{return ''}}
+// 예매사이트가 MOVOKA 자체 주소인지 확인하고 외부 주소만 허용합니다.
+function validBookingUrl(url){try{const value=String(url||'').trim();if(!value)return '';const parsed=new URL(value,location.href);if(!/^https?:$/.test(parsed.protocol))return '';if(parsed.origin===location.origin)return '';return parsed.href}catch{return ''}}
 
-// 예매사이트는 새 탭으로만 엽니다. 현재 MOVOKA 페이지를 다른 사이트로 바꾸지 않습니다.
-function openBooking(url){const href=validBookingUrl(url);if(!href){alert('등록된 예매사이트가 없습니다.');return}window.open(href,'_blank','noopener,noreferrer')}
+// 예매사이트는 새 탭으로만 엽니다. 현재 MOVOKA 탭에는 절대 이동하지 않습니다.
+function openBooking(url){const href=validBookingUrl(url);if(!href){alert('등록된 외부 예매사이트가 없습니다.');return}window.open(href,'_blank','noopener,noreferrer')}
 
-// 저장된 URL이 없으면 KOPIS 상세정보에서 실제 예매사이트를 찾아 새 탭으로 엽니다.
+// 저장된 주소가 MOVOKA 주소라면 무시하고 KOPIS에서 외부 예매사이트를 다시 찾습니다.
 async function openBookingFor(id,storedUrl){
   const saved=validBookingUrl(storedUrl);
   if(saved){openBooking(saved);return}
@@ -57,7 +57,7 @@ async function openBookingFor(id,storedUrl){
     const doc=new DOMParser().parseFromString(text,'text/xml');
     const relate=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim()).map(validBookingUrl).find(Boolean);
     if(relate){openBooking(relate);return}
-    alert('등록된 예매사이트가 없습니다.');
+    alert('등록된 외부 예매사이트가 없습니다.');
   }catch(error){alert(error.message||'예매사이트 정보를 불러오지 못했습니다.')}
 }
 
