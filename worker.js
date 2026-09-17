@@ -1,7 +1,7 @@
 // MOVOKA Worker - KOPIS 공연 데이터 관리
-// 매일 오전 7시 갱신 프로그램이 이 API를 통해 KOPIS 데이터를 가져갑니다.
+// 매일 오전 7시 갱신 프로그램이 이 API를 통해 KOPIS 데이터를 가져옵니다.
 
-const KOPIS_BASE = 'http://www.kopis.or.kr/openApi/restful/pblprfr';
+const KOPIS_BASE = 'https://www.kopis.or.kr/openApi/restful/pblprfr';
 const ROWS = 100;
 
 // 날짜를 KOPIS가 요구하는 YYYYMMDD 형식으로 만듭니다.
