@@ -54,6 +54,66 @@ function makeListUrl(requestUrl, key, page, rows) {
   return url;
 }
 
+// 외부 HTTP/HTTPS 주소만 허용하고 추적용 fragment는 제거합니다.
+function normalizeBookingUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    if (!/^https?:$/.test(url.protocol)) return '';
+    url.hash = '';
+    if ((url.protocol === 'http:' && url.port === '80') || (url.protocol === 'https:' && url.port === '443')) url.port = '';
+    return url.href.replace(/\/$/, '');
+  } catch {
+    return '';
+  }
+}
+
+// 예매사이트가 실제로 응답하는지 확인합니다. HEAD가 거부되면 GET으로 확인합니다.
+async function isReachable(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    let response = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: controller.signal });
+    if (response.status === 405 || response.status === 403) {
+      response = await fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal, headers: { Range: 'bytes=0-0' } });
+    }
+    return response.status >= 200 && response.status < 400;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// KOPIS 상세 XML에서 중복/잘못된 예매사이트를 제거하고 실제 접속 가능한 사이트만 남깁니다.
+async function cleanBookingSites(xml) {
+  const block = xml.match(/<relates>[\s\S]*?<\/relates>/)?.[0];
+  if (!block) return xml;
+
+  const pairs = [];
+  const pairRegex = /<relatenm>([\s\S]*?)<\/relatenm>[\s\S]*?<relateurl>([\s\S]*?)<\/relateurl>/g;
+  for (const match of block.matchAll(pairRegex)) {
+    const name = match[1].trim();
+    const url = normalizeBookingUrl(match[2]);
+    if (!url) continue;
+    pairs.push({ name, url });
+  }
+
+  const seenHosts = new Set();
+  const valid = [];
+  for (const site of pairs) {
+    try {
+      const host = new URL(site.url).hostname.replace(/^www\./, '').toLowerCase();
+      if (seenHosts.has(host)) continue;
+      if (!(await isReachable(site.url))) continue;
+      seenHosts.add(host);
+      valid.push(site);
+    } catch {}
+  }
+
+  const cleanBlock = `<relates>${valid.map(site => `<relatenm>${site.name}</relatenm><relateurl>${site.url}</relateurl>`).join('')}</relates>`;
+  return xml.replace(block, cleanBlock);
+}
+
 export default {
   async fetch(request, env) {
     // Worker에 등록된 KOPIS API 키를 확인합니다.
@@ -62,7 +122,6 @@ export default {
     if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
 
     // 공연 목록은 KOPIS 원본 후보를 수량 제한 없이 페이지 끝까지 제공합니다.
-    // 지난 공연 제거는 refresh 스크립트가 공연 종료일을 기준으로 최종 처리합니다.
     if (url.pathname === '/api/performances') {
       try {
         const page = Math.max(1, Number(url.searchParams.get('page') || 1));
@@ -84,7 +143,7 @@ export default {
       }
     }
 
-    // 공연 상세정보를 제공합니다.
+    // 공연 상세정보를 제공하면서 예매사이트는 중복/오류 링크를 정리합니다.
     if (url.pathname === '/api/performance') {
       const id = url.searchParams.get('mt20id') || '';
       if (!/^PF\d+$/.test(id)) return Response.json({ ok: false, error: '잘못된 공연 ID입니다.' }, { status: 400 });
@@ -92,7 +151,8 @@ export default {
         const detailUrl = new URL(`${KOPIS_BASE}/${id}`);
         detailUrl.searchParams.set('service', key);
         const xml = await callKopis(detailUrl);
-        return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
+        const cleaned = await cleanBookingSites(xml);
+        return new Response(cleaned, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
       }
