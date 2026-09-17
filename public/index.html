@@ -38,15 +38,15 @@ $('search').onclick=filterData;
 $('q').onkeydown=e=>{if(e.key==='Enter')filterData()};
 
 // HTML 특수문자를 안전하게 표시합니다.
-function esc(v){return String(v||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function esc(v){return String(v||'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]))}
 
-// 예매사이트 주소는 반드시 외부 HTTP/HTTPS 주소로만 처리합니다.
+// 예매사이트 주소가 실제 외부 HTTP/HTTPS 주소인지 확인합니다.
 function validBookingUrl(url){try{const value=String(url||'').trim();if(!value)return '';const parsed=new URL(value);return /^https?:$/.test(parsed.protocol)?parsed.href:''}catch{return ''}}
 
-// 예매사이트를 새 탭으로 열며, 팝업 차단 시에도 외부 주소로 이동합니다.
-function openBooking(url){const href=validBookingUrl(url);if(!href)return;const popup=window.open(href,'_blank','noopener,noreferrer');if(!popup)window.location.assign(href)}
+// 예매사이트는 새 탭으로만 엽니다. 현재 MOVOKA 페이지를 다른 사이트로 바꾸지 않습니다.
+function openBooking(url){const href=validBookingUrl(url);if(!href){alert('등록된 예매사이트가 없습니다.');return}window.open(href,'_blank','noopener,noreferrer')}
 
-// 저장된 URL이 없더라도 KOPIS 상세정보에서 실제 예매사이트를 찾아 이동합니다.
+// 저장된 URL이 없으면 KOPIS 상세정보에서 실제 예매사이트를 찾아 새 탭으로 엽니다.
 async function openBookingFor(id,storedUrl){
   const saved=validBookingUrl(storedUrl);
   if(saved){openBooking(saved);return}
@@ -61,11 +61,11 @@ async function openBookingFor(id,storedUrl){
   }catch(error){alert(error.message||'예매사이트 정보를 불러오지 못했습니다.')}
 }
 
-// 공연 카드에는 항상 '예매사이트' 버튼을 표시합니다.
+// 공연 카드에는 '예매사이트' 버튼을 표시합니다.
 function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onclick="openBookingFor('${esc(x.mt20id)}','${esc(x.bookingUrl||'')}')">예매사이트</button></div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
-function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>';$('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
+function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>'; $('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
 
 // 페이지 이동은 서버나 KOPIS를 다시 호출하지 않고 메모리에 받은 데이터를 사용합니다.
 function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager').innerHTML=Array.from({length:totalPages},(_,i)=>`<button class="page ${i+1===page?'active':''}" data-page="${i+1}">${i+1}</button>`).join('');$('pager').onclick=e=>{const b=e.target.closest('.page');if(!b)return;page=Number(b.dataset.page);render();scrollTo({top:0,behavior:'smooth'})}}
