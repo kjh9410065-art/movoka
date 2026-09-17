@@ -54,12 +54,6 @@ function makeListUrl(requestUrl, key, page, rows) {
   return url;
 }
 
-// 종료일이 오늘보다 이전인 공연을 제외합니다.
-function removeExpired(items) {
-  const today = ymd(new Date());
-  return items.filter(item => !item.prfpdto || item.prfpdto >= today);
-}
-
 export default {
   async fetch(request, env) {
     // Worker에 등록된 KOPIS API 키를 확인합니다.
@@ -67,14 +61,13 @@ export default {
     const key = env.KOPIS_API_KEY;
     if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
 
-    // 공연 목록을 KOPIS 페이지 단위 그대로 반환합니다.
-    // refresh 스크립트는 날짜로 최종 분류하므로 includeExpired=1이면 원본 후보를 그대로 받습니다.
+    // 공연 목록은 KOPIS 원본 후보를 수량 제한 없이 페이지 끝까지 제공합니다.
+    // 지난 공연 제거는 refresh 스크립트가 공연 종료일을 기준으로 최종 처리합니다.
     if (url.pathname === '/api/performances') {
       try {
         const page = Math.max(1, Number(url.searchParams.get('page') || 1));
         const rows = Math.min(ROWS, Math.max(1, Number(url.searchParams.get('rows') || ROWS)));
-        const rawItems = parseList(await callKopis(makeListUrl(url, key, page, rows)));
-        const items = url.searchParams.get('includeExpired') === '1' ? rawItems : removeExpired(rawItems);
+        const items = parseList(await callKopis(makeListUrl(url, key, page, rows)));
         return Response.json({ ok: true, page, rows, count: items.length, items, refreshedAt: ymd(new Date()) });
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
@@ -84,7 +77,7 @@ export default {
     // KOPIS 연결 테스트용으로 공연 1개만 반환합니다.
     if (url.pathname === '/api/test') {
       try {
-        const items = removeExpired(parseList(await callKopis(makeListUrl(url, key, 1, 1))));
+        const items = parseList(await callKopis(makeListUrl(url, key, 1, 1)));
         return Response.json({ ok: true, count: items.length, first: items[0] || null });
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
