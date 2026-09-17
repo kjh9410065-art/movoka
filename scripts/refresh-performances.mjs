@@ -7,26 +7,33 @@ const API_BASE = process.env.MOVOKA_API_BASE || 'https://movoka.tcflick.com';
 const OUTPUT = 'public/data/performances.json';
 const ROWS = 100;
 const MAX_PAGES = 100;
+const KOPIS_MAX_DAYS = 30;
 
-// KST 기준 오늘 날짜를 YYYYMMDD 형식으로 만듭니다.
-function todayKst() {
+// KST 기준 날짜를 YYYYMMDD 형식으로 만듭니다.
+function dateKst(offsetDays = 0) {
+  const now = new Date();
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(new Date());
+  }).formatToParts(now);
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}${values.month}${values.day}`;
+  const date = new Date(`${values.year}-${values.month}-${values.day}T00:00:00+09:00`);
+  date.setDate(date.getDate() + offsetDays);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}${m}${d}`;
 }
 
-// 오늘 하루만 조회하면서 KOPIS의 상태별 데이터를 가져옵니다.
-async function fetchByState(state, today) {
+// KOPIS의 최대 조회기간에 맞춰 상태별 공연을 페이지 끝까지 가져옵니다.
+async function fetchWindow(state, start, end) {
   const items = [];
 
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const url = new URL('/api/performances', API_BASE);
     url.searchParams.set('page', String(page));
     url.searchParams.set('rows', String(ROWS));
-    url.searchParams.set('stdate', today);
-    url.searchParams.set('eddate', today);
+    url.searchParams.set('stdate', start);
+    url.searchParams.set('eddate', end);
     url.searchParams.set('prfstate', state);
 
     const response = await fetch(url, { cache: 'no-store' });
@@ -35,44 +42,74 @@ async function fetchByState(state, today) {
 
     const pageItems = data.items || [];
     items.push(...pageItems);
-    console.log(`오늘 ${today}, state ${state}, page ${page}: ${pageItems.length}개`);
+    console.log(`state ${state}, ${start}~${end}, page ${page}: ${pageItems.length}개`);
     if (pageItems.length < ROWS) break;
   }
 
   return items;
 }
 
-// 오늘 기준 종료된 공연은 저장하지 않습니다.
-function removeExpired(items, today) {
-  return items.filter(item => !item.prfpdto || item.prfpdto.replaceAll('.', '') >= today);
+// 날짜 문자열의 점을 제거해 YYYYMMDD 비교가 가능하게 만듭니다.
+function compactDate(value) {
+  return String(value || '').replaceAll('.', '');
 }
 
-// KOPIS의 공연중/공연예정 결과를 각각 저장합니다.
+// 오늘 실제로 진행 중인 공연만 남깁니다.
+function filterCurrent(items, today) {
+  return items.filter(item => {
+    const from = compactDate(item.prfpdfrom);
+    const to = compactDate(item.prfpdto);
+    return (!from || from <= today) && (!to || to >= today);
+  });
+}
+
+// 오늘 이후 시작하는 공연예정 항목만 남깁니다.
+function filterUpcoming(items, today) {
+  return items.filter(item => {
+    const from = compactDate(item.prfpdfrom);
+    return from && from > today;
+  });
+}
+
+// 공연 ID가 같은 중복 항목을 하나로 합치면서 상태를 명확하게 지정합니다.
+function uniqueById(items, state) {
+  const map = new Map();
+  for (const item of items) map.set(item.mt20id, { ...item, prfstate: state });
+  return [...map.values()];
+}
+
+// 조회 과정에서 과거 공연은 버리고 오늘 기준 공연중/공연예정만 저장합니다.
 function normalize(currentItems, upcomingItems, today) {
-  const currentMap = new Map();
-  const upcomingMap = new Map();
-
-  for (const item of removeExpired(currentItems, today)) currentMap.set(item.mt20id, { ...item, prfstate: '02' });
-  for (const item of removeExpired(upcomingItems, today)) upcomingMap.set(item.mt20id, { ...item, prfstate: '01' });
-
-  const current = [...currentMap.values()];
-  const upcoming = [...upcomingMap.values()];
+  const current = uniqueById(filterCurrent(currentItems, today), '02');
+  const upcoming = uniqueById(filterUpcoming(upcomingItems, today), '01');
   const allMap = new Map([...current, ...upcoming].map(item => [item.mt20id, item]));
 
-  return { updatedAt: new Date().toISOString(), current, upcoming, items: [...allMap.values()] };
+  return {
+    updatedAt: new Date().toISOString(),
+    current,
+    upcoming,
+    items: [...allMap.values()]
+  };
 }
 
-// 매일 오늘 하루의 공연정보만 가져오고 공연중/공연예정을 나눕니다.
-const today = todayKst();
+// KOPIS는 공연 시작일 기준 검색이므로 오늘 하루만 조회하면 이미 시작된 공연을 놓칩니다.
+// 따라서 공연중은 최근 30일의 시작일을, 공연예정은 오늘부터 30일의 시작일을 조회하고
+// 최종 저장 데이터에는 오늘 기준으로 유효한 공연만 남깁니다.
+const today = dateKst(0);
+const currentStart = dateKst(-KOPIS_MAX_DAYS);
+const upcomingEnd = dateKst(KOPIS_MAX_DAYS);
+
 const [current, upcoming] = await Promise.all([
-  fetchByState('02', today),
-  fetchByState('01', today)
+  fetchWindow('02', currentStart, today),
+  fetchWindow('01', today, upcomingEnd)
 ]);
 
-// 결과를 정적 JSON으로 저장합니다.
+// 최종 JSON에는 과거 공연을 저장하지 않고 현재/예정 공연만 저장합니다.
 const data = normalize(current, upcoming, today);
 await mkdir('public/data', { recursive: true });
 await writeFile(OUTPUT, JSON.stringify(data), 'utf8');
 console.log(`완료: 현재 ${data.current.length}개 / 예정 ${data.upcoming.length}개 / 전체 ${data.items.length}개`);
-console.log(`조회일: ${today}`);
+console.log(`기준일: ${today}`);
+console.log(`현재 조회: ${currentStart} ~ ${today}`);
+console.log(`예정 조회: ${today} ~ ${upcomingEnd}`);
 console.log(`저장: ${OUTPUT}`);
