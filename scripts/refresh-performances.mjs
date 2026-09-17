@@ -9,18 +9,16 @@ const ROWS = 100;
 const MAX_PAGES = 100;
 const KOPIS_MAX_DAYS = 30;
 
-// KST 기준 날짜를 YYYYMMDD 형식으로 만듭니다.
+// KST 기준 날짜를 YYYYMMDD 형식으로 만들고 날짜 이동도 정확히 처리합니다.
 function dateKst(offsetDays = 0) {
-  const now = new Date();
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(now);
+  }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  const date = new Date(`${values.year}-${values.month}-${values.day}T00:00:00+09:00`);
-  date.setDate(date.getDate() + offsetDays);
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
+  const date = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day) + offsetDays));
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
   return `${y}${m}${d}`;
 }
 
@@ -93,8 +91,7 @@ function normalize(currentItems, upcomingItems, today) {
 }
 
 // KOPIS는 공연 시작일 기준 검색이므로 오늘 하루만 조회하면 이미 시작된 공연을 놓칩니다.
-// 따라서 공연중은 최근 30일의 시작일을, 공연예정은 오늘부터 30일의 시작일을 조회하고
-// 최종 저장 데이터에는 오늘 기준으로 유효한 공연만 남깁니다.
+// 공연중은 최근 30일의 시작일을, 공연예정은 오늘부터 30일의 시작일을 조회합니다.
 const today = dateKst(0);
 const currentStart = dateKst(-KOPIS_MAX_DAYS);
 const upcomingEnd = dateKst(KOPIS_MAX_DAYS);
@@ -104,7 +101,7 @@ const [current, upcoming] = await Promise.all([
   fetchWindow('01', today, upcomingEnd)
 ]);
 
-// 최종 JSON에는 과거 공연을 저장하지 않고 현재/예정 공연만 저장합니다.
+// 최종 JSON에는 오늘 기준 공연중/공연예정만 저장합니다.
 const data = normalize(current, upcoming, today);
 await mkdir('public/data', { recursive: true });
 await writeFile(OUTPUT, JSON.stringify(data), 'utf8');
