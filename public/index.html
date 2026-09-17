@@ -40,11 +40,29 @@ $('q').onkeydown=e=>{if(e.key==='Enter')filterData()};
 // HTML 특수문자를 안전하게 표시합니다.
 function esc(v){return String(v||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 
-// 예매 URL을 안전하게 검사하고 새 탭에서 엽니다.
-function openBooking(url){if(!url)return;try{const parsed=new URL(url,location.origin);if(!/^https?:$/.test(parsed.protocol))return;window.open(parsed.href,'_blank','noopener,noreferrer')}catch{}}
+// URL이 실제 웹 주소인지 검사합니다.
+function validUrl(url){try{const parsed=new URL(url,location.origin);return /^https?:$/.test(parsed.protocol)?parsed.href:''}catch{return ''}}
 
-// 공연 카드를 만들고 KOPIS에 등록된 예매 사이트가 있으면 예매 버튼을 표시합니다.
-function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button>${x.bookingUrl?`<button class="booking" onclick="openBooking('${esc(x.bookingUrl)}')">예매</button>`:''}</div></div></article>`}
+// 이미 저장된 예매 URL을 새 탭에서 엽니다.
+function openBooking(url){const href=validUrl(url);if(href)window.open(href,'_blank','noopener,noreferrer')}
+
+// KOPIS 상세정보에서 등록된 예매 사이트 URL을 찾아 새 탭에서 엽니다.
+async function openBookingFor(id,storedUrl){
+  const href=validUrl(storedUrl);
+  if(href){openBooking(href);return}
+  try{
+    const response=await fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'no-store'});
+    const text=await response.text();
+    if(!response.ok)throw new Error('예매정보를 불러오지 못했습니다.');
+    const doc=new DOMParser().parseFromString(text,'text/xml');
+    const relate=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim()).find(validUrl);
+    if(relate){openBooking(relate);return}
+    alert('KOPIS에 등록된 예매사이트가 없습니다.');
+  }catch(error){alert(error.message||'예매정보를 불러오지 못했습니다.')}
+}
+
+// 공연 카드마다 예매 버튼을 표시하고 클릭 시 KOPIS 등록 예매사이트를 확인합니다.
+function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onclick="openBookingFor('${esc(x.mt20id)}','${esc(x.bookingUrl||'')}')">예매</button></div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
 function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>';$('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
