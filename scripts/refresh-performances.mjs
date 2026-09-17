@@ -7,7 +7,9 @@ const API_BASE = process.env.MOVOKA_API_BASE || 'https://movoka.tcflick.com';
 const OUTPUT = 'public/data/performances.json';
 const ROWS = 100;
 const MAX_PAGES = 100;
-const KOPIS_MAX_DAYS = 30;
+const WINDOW_DAYS = 30;
+const MAX_LOOKBACK_DAYS = 365;
+const MAX_LOOKAHEAD_DAYS = 365;
 
 // KST 기준 날짜를 YYYYMMDD 형식으로 만들고 날짜 이동도 정확히 처리합니다.
 function dateKst(offsetDays = 0) {
@@ -22,7 +24,7 @@ function dateKst(offsetDays = 0) {
   return `${y}${m}${d}`;
 }
 
-// KOPIS의 최대 조회기간에 맞춰 상태별 공연을 페이지 끝까지 가져옵니다.
+// KOPIS의 최대 조회기간에 맞춰 한 구간의 상태별 공연을 페이지 끝까지 가져옵니다.
 async function fetchWindow(state, start, end) {
   const items = [];
 
@@ -45,6 +47,22 @@ async function fetchWindow(state, start, end) {
   }
 
   return items;
+}
+
+// 여러 30일 구간을 연결해 필요한 상태의 전체 후보를 수집합니다.
+async function fetchWindows(state, today, startOffset, endOffset) {
+  const all = [];
+  let cursor = startOffset;
+
+  while (cursor < endOffset) {
+    const next = Math.min(cursor + WINDOW_DAYS, endOffset);
+    const start = dateKst(cursor);
+    const end = dateKst(next);
+    all.push(...await fetchWindow(state, start, end));
+    cursor = next;
+  }
+
+  return all;
 }
 
 // 날짜 문자열의 점을 제거해 YYYYMMDD 비교가 가능하게 만듭니다.
@@ -90,23 +108,23 @@ function normalize(currentItems, upcomingItems, today) {
   };
 }
 
-// KOPIS는 공연 시작일 기준 검색이므로 오늘 하루만 조회하면 이미 시작된 공연을 놓칩니다.
-// 공연중은 최근 30일의 시작일을, 공연예정은 오늘부터 30일의 시작일을 조회합니다.
+// KOPIS는 시작일 기준 조회라 오늘 하루만 조회하면 장기 공연과 미래 공연을 놓칩니다.
+// 여러 30일 API 호출로 후보를 모은 뒤 최종 JSON에는 오늘 유효한 공연만 남깁니다.
 const today = dateKst(0);
-const currentStart = dateKst(-KOPIS_MAX_DAYS);
-const upcomingEnd = dateKst(KOPIS_MAX_DAYS);
+const currentStartOffset = -MAX_LOOKBACK_DAYS;
+const upcomingEndOffset = MAX_LOOKAHEAD_DAYS;
 
 const [current, upcoming] = await Promise.all([
-  fetchWindow('02', currentStart, today),
-  fetchWindow('01', today, upcomingEnd)
+  fetchWindows('02', today, currentStartOffset, 0),
+  fetchWindows('01', today, 0, upcomingEndOffset)
 ]);
 
-// 최종 JSON에는 오늘 기준 공연중/공연예정만 저장합니다.
+// 최종 JSON에는 과거 공연을 저장하지 않고 오늘 기준 공연중/공연예정만 저장합니다.
 const data = normalize(current, upcoming, today);
 await mkdir('public/data', { recursive: true });
 await writeFile(OUTPUT, JSON.stringify(data), 'utf8');
 console.log(`완료: 현재 ${data.current.length}개 / 예정 ${data.upcoming.length}개 / 전체 ${data.items.length}개`);
 console.log(`기준일: ${today}`);
-console.log(`현재 조회: ${currentStart} ~ ${today}`);
-console.log(`예정 조회: ${today} ~ ${upcomingEnd}`);
+console.log(`현재 후보 조회: ${dateKst(currentStartOffset)} ~ ${today}`);
+console.log(`예정 후보 조회: ${today} ~ ${dateKst(upcomingEndOffset)}`);
 console.log(`저장: ${OUTPUT}`);
