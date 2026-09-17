@@ -24,8 +24,9 @@ function dateKst(offsetDays = 0) {
   return `${y}${m}${d}`;
 }
 
-// KOPIS의 최대 조회기간에 맞춰 한 구간의 상태별 공연을 페이지 끝까지 가져옵니다.
-async function fetchWindow(state, start, end) {
+// 상태 필터를 걸지 않고 KOPIS의 전체 공연 후보를 가져옵니다.
+// 상태 필터를 사용하면 KOPIS의 상태 분류와 날짜 조건이 함께 적용되어 장기 공연이 누락될 수 있습니다.
+async function fetchWindow(start, end) {
   const items = [];
 
   for (let page = 1; page <= MAX_PAGES; page += 1) {
@@ -34,7 +35,6 @@ async function fetchWindow(state, start, end) {
     url.searchParams.set('rows', String(ROWS));
     url.searchParams.set('stdate', start);
     url.searchParams.set('eddate', end);
-    url.searchParams.set('prfstate', state);
 
     const response = await fetch(url, { cache: 'no-store' });
     const data = await response.json();
@@ -42,89 +42,71 @@ async function fetchWindow(state, start, end) {
 
     const pageItems = data.items || [];
     items.push(...pageItems);
-    console.log(`state ${state}, ${start}~${end}, page ${page}: ${pageItems.length}개`);
+    console.log(`전체, ${start}~${end}, page ${page}: ${pageItems.length}개`);
     if (pageItems.length < ROWS) break;
   }
 
   return items;
 }
 
-// 여러 30일 구간을 연결해 필요한 상태의 전체 후보를 수집합니다.
-async function fetchWindows(state, today, startOffset, endOffset) {
+// KOPIS의 최대 31일 조회 제한에 맞춰 전체 후보를 구간별로 수집합니다.
+async function fetchWindows(startOffset, endOffset) {
   const all = [];
   let cursor = startOffset;
 
   while (cursor < endOffset) {
     const next = Math.min(cursor + WINDOW_DAYS, endOffset);
-    const start = dateKst(cursor);
-    const end = dateKst(next);
-    all.push(...await fetchWindow(state, start, end));
+    all.push(...await fetchWindow(dateKst(cursor), dateKst(next)));
     cursor = next;
   }
 
   return all;
 }
 
-// 날짜 문자열의 점을 제거해 YYYYMMDD 비교가 가능하게 만듭니다.
+// 날짜 문자열을 YYYYMMDD 비교용으로 정규화합니다.
 function compactDate(value) {
   return String(value || '').replaceAll('.', '');
 }
 
-// 오늘 실제로 진행 중인 공연만 남깁니다.
+// 오늘 날짜가 공연기간 안에 포함되는 공연을 공연중으로 분류합니다.
 function filterCurrent(items, today) {
   return items.filter(item => {
     const from = compactDate(item.prfpdfrom);
     const to = compactDate(item.prfpdto);
-    return (!from || from <= today) && (!to || to >= today);
+    return from && from <= today && (!to || to >= today);
   });
 }
 
-// 오늘 이후 시작하는 공연예정 항목만 남깁니다.
+// 오늘 이후 시작하는 공연을 공연예정으로 분류합니다.
 function filterUpcoming(items, today) {
-  return items.filter(item => {
-    const from = compactDate(item.prfpdfrom);
-    return from && from > today;
-  });
+  return items.filter(item => compactDate(item.prfpdfrom) > today);
 }
 
-// 공연 ID가 같은 중복 항목을 하나로 합치면서 상태를 명확하게 지정합니다.
+// 여러 조회 구간에서 중복된 공연 ID를 하나로 합칩니다.
 function uniqueById(items, state) {
   const map = new Map();
   for (const item of items) map.set(item.mt20id, { ...item, prfstate: state });
   return [...map.values()];
 }
 
-// 조회 과정에서 과거 공연은 버리고 오늘 기준 공연중/공연예정만 저장합니다.
-function normalize(currentItems, upcomingItems, today) {
-  const current = uniqueById(filterCurrent(currentItems, today), '02');
-  const upcoming = uniqueById(filterUpcoming(upcomingItems, today), '01');
+// 과거 공연은 저장하지 않고 오늘 기준 공연중/공연예정만 저장합니다.
+function normalize(items, today) {
+  const current = uniqueById(filterCurrent(items, today), '02');
+  const upcoming = uniqueById(filterUpcoming(items, today), '01');
   const allMap = new Map([...current, ...upcoming].map(item => [item.mt20id, item]));
-
-  return {
-    updatedAt: new Date().toISOString(),
-    current,
-    upcoming,
-    items: [...allMap.values()]
-  };
+  return { updatedAt: new Date().toISOString(), current, upcoming, items: [...allMap.values()] };
 }
 
-// KOPIS는 시작일 기준 조회라 오늘 하루만 조회하면 장기 공연과 미래 공연을 놓칩니다.
-// 여러 30일 API 호출로 후보를 모은 뒤 최종 JSON에는 오늘 유효한 공연만 남깁니다.
+// 매일 한 번 새로 조회하고, 최종 저장 데이터는 오늘 기준으로만 구성합니다.
+// KOPIS가 공연 시작일 기준으로 검색하기 때문에 현재 공연을 놓치지 않도록 후보를 충분히 조회한 뒤 날짜로 직접 분류합니다.
 const today = dateKst(0);
-const currentStartOffset = -MAX_LOOKBACK_DAYS;
-const upcomingEndOffset = MAX_LOOKAHEAD_DAYS;
+const candidates = await fetchWindows(-MAX_LOOKBACK_DAYS, MAX_LOOKAHEAD_DAYS);
+const data = normalize(candidates, today);
 
-const [current, upcoming] = await Promise.all([
-  fetchWindows('02', today, currentStartOffset, 0),
-  fetchWindows('01', today, 0, upcomingEndOffset)
-]);
-
-// 최종 JSON에는 과거 공연을 저장하지 않고 오늘 기준 공연중/공연예정만 저장합니다.
-const data = normalize(current, upcoming, today);
+// 최종 결과 JSON을 정적 파일로 저장합니다.
 await mkdir('public/data', { recursive: true });
 await writeFile(OUTPUT, JSON.stringify(data), 'utf8');
 console.log(`완료: 현재 ${data.current.length}개 / 예정 ${data.upcoming.length}개 / 전체 ${data.items.length}개`);
 console.log(`기준일: ${today}`);
-console.log(`현재 후보 조회: ${dateKst(currentStartOffset)} ~ ${today}`);
-console.log(`예정 후보 조회: ${today} ~ ${dateKst(upcomingEndOffset)}`);
+console.log(`후보 조회: ${dateKst(-MAX_LOOKBACK_DAYS)} ~ ${dateKst(MAX_LOOKAHEAD_DAYS)}`);
 console.log(`저장: ${OUTPUT}`);
