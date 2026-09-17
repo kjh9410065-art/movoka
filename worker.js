@@ -1,5 +1,5 @@
 // MOVOKA Worker - KOPIS 공연 데이터 관리
-// 매일 오전 7시 갱신을 기준으로 현재 공연과 예정 공연을 제공합니다.
+// 매일 오전 7시 갱신 프로그램이 이 API를 통해 KOPIS 데이터를 가져갑니다.
 
 const KOPIS_BASE = 'http://www.kopis.or.kr/openApi/restful/pblprfr';
 const ROWS = 100;
@@ -10,15 +10,17 @@ function ymd(date) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
 }
 
-// KOPIS XML에서 공연 목록을 읽습니다.
+// KOPIS XML에서 공연 목록을 읽고 상태값을 코드로 통일합니다.
 function parseList(xml) {
   const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
   return matches.map(db => {
     const get = tag => db.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1]?.trim() || '';
+    const state = get('prfstate');
     return {
       mt20id: get('mt20id'), prfnm: get('prfnm'), prfpdfrom: get('prfpdfrom'),
       prfpdto: get('prfpdto'), fcltynm: get('fcltynm'), poster: get('poster'),
-      genrenm: get('genrenm'), prfcast: get('prfcast'), prfstate: get('prfstate'),
+      genrenm: get('genrenm'), prfcast: get('prfcast'),
+      prfstate: state === '공연중' ? '02' : state === '공연예정' ? '01' : state,
       area: get('area'), prfurl: get('prfurl')
     };
   }).filter(x => x.mt20id);
@@ -33,7 +35,7 @@ async function callKopis(url) {
   return text;
 }
 
-// 조회 기간은 오늘부터 30일 뒤까지이며, 종료일이 지난 공연은 추가로 제거합니다.
+// KOPIS 요청 조건을 URL로 만듭니다. 상태코드도 그대로 전달합니다.
 function makeListUrl(requestUrl, key, page, rows) {
   const now = new Date();
   const end = new Date(now);
@@ -44,7 +46,7 @@ function makeListUrl(requestUrl, key, page, rows) {
   url.searchParams.set('eddate', requestUrl.searchParams.get('eddate') || ymd(end));
   url.searchParams.set('cpage', String(page));
   url.searchParams.set('rows', String(rows));
-  for (const name of ['shcate', 'signgucode', 'signgucodesub', 'shprfnm']) {
+  for (const name of ['prfstate', 'shcate', 'signgucode', 'signgucodesub', 'shprfnm']) {
     const value = requestUrl.searchParams.get(name);
     if (value) url.searchParams.set(name, value);
   }
@@ -105,7 +107,7 @@ export default {
   },
 
   async scheduled(controller, env) {
-    // Cloudflare Cron이 매일 오전 7시에 실행합니다. 실제 목록은 다음 사용자 요청 시 최신 상태로 조회됩니다.
-    console.log(`MOVOKA daily refresh completed: ${new Date().toISOString()}`);
+    // 실제 데이터 갱신은 GitHub Actions가 매일 오전 7시에 수행합니다.
+    console.log(`MOVOKA daily refresh: ${new Date().toISOString()}`);
   }
 };
