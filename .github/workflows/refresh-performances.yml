@@ -6,6 +6,12 @@ on:
   # UTC 22:00 = 한국시간 다음날 오전 7:00입니다.
   schedule:
     - cron: '0 22 * * *'
+  # 코드 수정 직후에도 갱신 프로그램을 한 번 실행합니다.
+  push:
+    paths:
+      - 'scripts/refresh-performances.mjs'
+      - 'worker.js'
+      - '.github/workflows/refresh-performances.yml'
   # 필요할 때 GitHub Actions 화면에서 수동 실행할 수 있습니다.
   workflow_dispatch:
 
@@ -26,7 +32,7 @@ jobs:
         with:
           node-version: 20
 
-      # KOPIS Worker API에서 전체 공연 데이터를 받아 JSON으로 저장합니다.
+      # KOPIS Worker API에서 현재/예정 공연 데이터를 받아 JSON으로 저장합니다.
       - name: Refresh performance data
         run: node scripts/refresh-performances.mjs
 
