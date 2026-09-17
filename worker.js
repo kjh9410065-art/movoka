@@ -1,7 +1,8 @@
 // MOVOKA Worker - KOPIS 공연 데이터 관리
-// 매일 오전 7시 갱신 프로그램이 이 API를 통해 KOPIS 데이터를 가져옵니다.
+// GitHub Actions 서버가 이 API를 통해 KOPIS 데이터를 가져옵니다.
 
-const KOPIS_BASE = 'https://www.kopis.or.kr/openApi/restful/pblprfr';
+// KOPIS 공식 Open API 운영 주소를 사용합니다.
+const KOPIS_BASE = 'http://www.kopis.or.kr/openApi/restful/pblprfr';
 const ROWS = 100;
 
 // 날짜를 KOPIS가 요구하는 YYYYMMDD 형식으로 만듭니다.
@@ -35,7 +36,7 @@ async function callKopis(url) {
   return text;
 }
 
-// KOPIS 요청 조건을 URL로 만듭니다. 상태코드도 그대로 전달합니다.
+// KOPIS 요청 조건을 URL로 만듭니다.
 function makeListUrl(requestUrl, key, page, rows) {
   const now = new Date();
   const end = new Date(now);
@@ -66,12 +67,14 @@ export default {
     const key = env.KOPIS_API_KEY;
     if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
 
-    // 공연 목록을 100개 단위로 반환합니다.
+    // 공연 목록을 KOPIS 페이지 단위 그대로 반환합니다.
+    // refresh 스크립트는 날짜로 최종 분류하므로 includeExpired=1이면 원본 후보를 그대로 받습니다.
     if (url.pathname === '/api/performances') {
       try {
         const page = Math.max(1, Number(url.searchParams.get('page') || 1));
         const rows = Math.min(ROWS, Math.max(1, Number(url.searchParams.get('rows') || ROWS)));
-        const items = removeExpired(parseList(await callKopis(makeListUrl(url, key, page, rows))));
+        const rawItems = parseList(await callKopis(makeListUrl(url, key, page, rows)));
+        const items = url.searchParams.get('includeExpired') === '1' ? rawItems : removeExpired(rawItems);
         return Response.json({ ok: true, page, rows, count: items.length, items, refreshedAt: ymd(new Date()) });
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
