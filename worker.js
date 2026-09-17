@@ -8,8 +8,8 @@ const DETAIL_CACHE_TTL = 86400;
 const TICKET_BATCH_SIZE = 20;
 const DETAIL_CONCURRENCY = 5;
 
-// KOPIS 공식 Open API는 현재 가이드에서 HTTP 운영 URL을 제공합니다.
-const KOPIS_BASE = 'http://www.kopis.or.kr/openApi/restful/pblprfr';
+// KOPIS의 canonical HTTPS 호스트를 직접 사용해 www 리다이렉트 문제를 피합니다.
+const KOPIS_BASE = 'https://kopis.or.kr/openApi/restful/pblprfr';
 
 function ymd(date) {
   // 날짜를 KOPIS 형식인 YYYYMMDD로 변환합니다.
@@ -118,7 +118,7 @@ export default {
         api.searchParams.set('cpage', '1');
         api.searchParams.set('rows', '1');
         const xml = await kopis(api);
-        return Response.json({ok: true, host: 'http://www.kopis.or.kr', dbCount: dbs(xml).length, responseLength: xml.length});
+        return Response.json({ok: true, host: 'https://kopis.or.kr', dbCount: dbs(xml).length, responseLength: xml.length});
       } catch (error) {
         return Response.json({ok: false, error: String(error?.message || error).slice(0, 300)}, {status: 502});
       }
@@ -126,7 +126,7 @@ export default {
 
     if (url.pathname === '/api/performances/first') {
       // 첫 화면 API는 별도 캐시로 보호합니다.
-      const keyUrl = `first-v11:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      const keyUrl = `first-v12:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const hit = await caches.default.match(cacheKey(keyUrl));
       if (hit) return hit;
       try {
@@ -143,7 +143,7 @@ export default {
     if (url.pathname === '/api/performances/batch') {
       // 전체 목록을 6페이지씩 나눠 조회합니다.
       const start = Math.max(2, Number(url.searchParams.get('start') || 2));
-      const keyUrl = `batch-v3:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
+      const keyUrl = `batch-v4:${url.origin}${url.pathname}?${url.searchParams.toString()}`;
       const hit = await caches.default.match(cacheKey(keyUrl));
       if (hit) return hit;
       try {
