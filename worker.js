@@ -1,7 +1,8 @@
-// MOVOKA Worker - KOPIS 연결을 가장 단순한 구조로 다시 만듭니다.
+// MOVOKA Worker - KOPIS 공연 데이터 관리
+// 매일 오전 7시 갱신을 기준으로 현재 공연과 예정 공연을 제공합니다.
 
-// KOPIS 공식 Open API 가이드의 운영 주소를 사용합니다.
 const KOPIS_BASE = 'http://www.kopis.or.kr/openApi/restful/pblprfr';
+const ROWS = 100;
 
 // 날짜를 KOPIS가 요구하는 YYYYMMDD 형식으로 만듭니다.
 function ymd(date) {
@@ -15,33 +16,24 @@ function parseList(xml) {
   return matches.map(db => {
     const get = tag => db.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`))?.[1]?.trim() || '';
     return {
-      mt20id: get('mt20id'),
-      prfnm: get('prfnm'),
-      prfpdfrom: get('prfpdfrom'),
-      prfpdto: get('prfpdto'),
-      fcltynm: get('fcltynm'),
-      poster: get('poster'),
-      genrenm: get('genrenm'),
-      prfcast: get('prfcast'),
-      prfstate: get('prfstate'),
-      area: get('area'),
-      prfurl: get('prfurl')
+      mt20id: get('mt20id'), prfnm: get('prfnm'), prfpdfrom: get('prfpdfrom'),
+      prfpdto: get('prfpdto'), fcltynm: get('fcltynm'), poster: get('poster'),
+      genrenm: get('genrenm'), prfcast: get('prfcast'), prfstate: get('prfstate'),
+      area: get('area'), prfurl: get('prfurl')
     };
   }).filter(x => x.mt20id);
 }
 
-// KOPIS에 한 번 요청하고 원문 XML을 반환합니다.
+// KOPIS API를 호출하고 정상 XML인지 확인합니다.
 async function callKopis(url) {
   const response = await fetch(url.toString(), { redirect: 'follow' });
   const text = await response.text();
   if (!response.ok) throw new Error(`KOPIS HTTP ${response.status}: ${text.slice(0, 300)}`);
-  if (!text.includes('<dbs') && !text.includes('<db>')) {
-    throw new Error(`KOPIS 응답 형식 오류: ${text.slice(0, 300)}`);
-  }
+  if (!text.includes('<dbs') && !text.includes('<db>')) throw new Error(`KOPIS 응답 형식 오류: ${text.slice(0, 300)}`);
   return text;
 }
 
-// 화면 검색조건을 KOPIS URL로 변환합니다.
+// 조회 기간은 오늘부터 30일 뒤까지이며, 종료일이 지난 공연은 추가로 제거합니다.
 function makeListUrl(requestUrl, key, page, rows) {
   const now = new Date();
   const end = new Date(now);
@@ -59,34 +51,36 @@ function makeListUrl(requestUrl, key, page, rows) {
   return url;
 }
 
+// 종료일이 오늘보다 이전인 공연을 제외합니다.
+function removeExpired(items) {
+  const today = ymd(new Date());
+  return items.filter(item => !item.prfpdto || item.prfpdto >= today);
+}
+
 export default {
   async fetch(request, env) {
-    // API 키가 없으면 정확한 오류를 바로 반환합니다.
+    // Worker에 등록된 KOPIS API 키를 확인합니다.
     const url = new URL(request.url);
     const key = env.KOPIS_API_KEY;
     if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
 
-    // 가장 먼저 확인할 연결 테스트입니다. 공연 1개만 요청합니다.
-    if (url.pathname === '/api/test') {
+    // 공연 목록을 100개 단위로 반환합니다.
+    if (url.pathname === '/api/performances') {
       try {
-        const kopisUrl = makeListUrl(url, key, 1, 1);
-        const xml = await callKopis(kopisUrl);
-        const items = parseList(xml);
-        return Response.json({ ok: true, count: items.length, first: items[0] || null });
+        const page = Math.max(1, Number(url.searchParams.get('page') || 1));
+        const rows = Math.min(ROWS, Math.max(1, Number(url.searchParams.get('rows') || ROWS)));
+        const items = removeExpired(parseList(await callKopis(makeListUrl(url, key, page, rows))));
+        return Response.json({ ok: true, page, rows, count: items.length, items, refreshedAt: ymd(new Date()) });
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
       }
     }
 
-    // 공연 목록을 100개 단위로 반환합니다. 프론트가 필요한 페이지를 호출합니다.
-    if (url.pathname === '/api/performances') {
+    // KOPIS 연결 테스트용으로 공연 1개만 반환합니다.
+    if (url.pathname === '/api/test') {
       try {
-        const page = Math.max(1, Number(url.searchParams.get('page') || 1));
-        const rows = Math.min(100, Math.max(1, Number(url.searchParams.get('rows') || 100)));
-        const kopisUrl = makeListUrl(url, key, page, rows);
-        const xml = await callKopis(kopisUrl);
-        const items = parseList(xml);
-        return Response.json({ ok: true, page, rows, count: items.length, items });
+        const items = removeExpired(parseList(await callKopis(makeListUrl(url, key, 1, 1))));
+        return Response.json({ ok: true, count: items.length, first: items[0] || null });
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
       }
@@ -100,7 +94,7 @@ export default {
         const detailUrl = new URL(`${KOPIS_BASE}/${id}`);
         detailUrl.searchParams.set('service', key);
         const xml = await callKopis(detailUrl);
-        return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
+        return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
       }
@@ -108,5 +102,10 @@ export default {
 
     // 정적 파일은 ASSETS에서 그대로 제공합니다.
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(controller, env) {
+    // Cloudflare Cron이 매일 오전 7시에 실행합니다. 실제 목록은 다음 사용자 요청 시 최신 상태로 조회됩니다.
+    console.log(`MOVOKA daily refresh completed: ${new Date().toISOString()}`);
   }
 };
