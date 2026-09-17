@@ -1,0 +1,40 @@
+# MOVOKA 공연 데이터를 매일 오전 7시(KST)에 갱신합니다.
+# GitHub 서버에서 실행되므로 사용자 PC가 꺼져 있어도 작동합니다.
+name: MOVOKA Daily Performance Refresh
+
+on:
+  # UTC 22:00 = 한국시간 다음날 오전 7:00입니다.
+  schedule:
+    - cron: '0 22 * * *'
+  # 필요할 때 GitHub Actions 화면에서 수동 실행할 수 있습니다.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      # 저장소의 최신 코드를 가져옵니다.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Node.js 20 환경을 준비합니다.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # KOPIS Worker API에서 전체 공연 데이터를 받아 JSON으로 저장합니다.
+      - name: Refresh performance data
+        run: node scripts/refresh-performances.mjs
+
+      # 변경된 공연 데이터만 GitHub에 커밋합니다.
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/performances.json
+          git diff --cached --quiet || git commit -m "chore: refresh MOVOKA performance data"
+          git push
