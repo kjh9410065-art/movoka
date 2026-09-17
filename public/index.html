@@ -40,29 +40,29 @@ $('q').onkeydown=e=>{if(e.key==='Enter')filterData()};
 // HTML 특수문자를 안전하게 표시합니다.
 function esc(v){return String(v||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 
-// URL이 실제 웹 주소인지 검사합니다.
-function validUrl(url){try{const parsed=new URL(url,location.origin);return /^https?:$/.test(parsed.protocol)?parsed.href:''}catch{return ''}}
+// 예매사이트 주소는 반드시 외부 HTTP/HTTPS 주소로만 처리합니다.
+function validBookingUrl(url){try{const value=String(url||'').trim();if(!value)return '';const parsed=new URL(value);return /^https?:$/.test(parsed.protocol)?parsed.href:''}catch{return ''}}
 
-// 이미 저장된 예매 URL을 새 탭에서 엽니다.
-function openBooking(url){const href=validUrl(url);if(href)window.open(href,'_blank','noopener,noreferrer')}
+// 예매사이트를 새 탭으로 열며, 팝업 차단 시에도 외부 주소로 이동합니다.
+function openBooking(url){const href=validBookingUrl(url);if(!href)return;const popup=window.open(href,'_blank','noopener,noreferrer');if(!popup)window.location.assign(href)}
 
-// KOPIS 상세정보에서 등록된 예매 사이트 URL을 찾아 새 탭에서 엽니다.
+// 저장된 URL이 없더라도 KOPIS 상세정보에서 실제 예매사이트를 찾아 이동합니다.
 async function openBookingFor(id,storedUrl){
-  const href=validUrl(storedUrl);
-  if(href){openBooking(href);return}
+  const saved=validBookingUrl(storedUrl);
+  if(saved){openBooking(saved);return}
   try{
     const response=await fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'no-store'});
     const text=await response.text();
-    if(!response.ok)throw new Error('예매정보를 불러오지 못했습니다.');
+    if(!response.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');
     const doc=new DOMParser().parseFromString(text,'text/xml');
-    const relate=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim()).find(validUrl);
+    const relate=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim()).map(validBookingUrl).find(Boolean);
     if(relate){openBooking(relate);return}
-    alert('KOPIS에 등록된 예매사이트가 없습니다.');
-  }catch(error){alert(error.message||'예매정보를 불러오지 못했습니다.')}
+    alert('등록된 예매사이트가 없습니다.');
+  }catch(error){alert(error.message||'예매사이트 정보를 불러오지 못했습니다.')}
 }
 
-// 공연 카드마다 예매 버튼을 표시하고 클릭 시 KOPIS 등록 예매사이트를 확인합니다.
-function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onclick="openBookingFor('${esc(x.mt20id)}','${esc(x.bookingUrl||'')}')">예매</button></div></div></article>`}
+// 공연 카드에는 항상 '예매사이트' 버튼을 표시합니다.
+function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onclick="openBookingFor('${esc(x.mt20id)}','${esc(x.bookingUrl||'')}')">예매사이트</button></div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
 function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>';$('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
@@ -73,8 +73,8 @@ function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager
 // 장르와 검색어를 이미 받아둔 전체 데이터에 적용합니다.
 function filterData(){const keyword=$('q').value.trim().toLowerCase();const filter=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').toLowerCase().includes(keyword)));allCurrent=filter(window.__rawCurrent||[]);allUpcoming=filter(window.__rawUpcoming||[]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}
 
-// 저장된 일일 데이터 파일을 한 번만 읽습니다. 페이지 이동에는 네트워크 요청이 없습니다.
-async function load(){try{const response=await fetch('/data/performances.json',{cache:'no-store'});const data=await response.json();if(!response.ok||!data||!Array.isArray(data.items))throw new Error('저장된 공연 데이터가 없습니다.');window.__rawCurrent=data.current||[];window.__rawUpcoming=data.upcoming||[];$('updated').textContent=data.updatedAt?`마지막 갱신 ${new Date(data.updatedAt).toLocaleString('ko-KR')}`:'갱신 대기 중';filterData()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
+// 저장된 일일 데이터 파일을 한 번만 읽습니다. 캐시된 이전 JSON을 피합니다.
+async function load(){try{const response=await fetch('/data/performances.json?'+Date.now(),{cache:'no-store'});const data=await response.json();if(!response.ok||!data||!Array.isArray(data.items))throw new Error('저장된 공연 데이터가 없습니다.');window.__rawCurrent=data.current||[];window.__rawUpcoming=data.upcoming||[];$('updated').textContent=data.updatedAt?`마지막 갱신 ${new Date(data.updatedAt).toLocaleString('ko-KR')}`:'갱신 대기 중';filterData()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
 
 // 공연 상세정보는 사용자가 상세보기를 누를 때만 Worker API를 호출합니다.
 async function detail(id){const r=await fetch('/api/performance?mt20id='+encodeURIComponent(id));const text=await r.text();if(!r.ok){alert(text);return}const doc=new DOMParser().parseFromString(text,'text/xml');const get=t=>doc.querySelector(t)?.textContent||'';alert(`${get('prfnm')}\n\n${get('prfpdfrom')} ~ ${get('prfpdto')}\n${get('fcltynm')}\n\n${get('prfcast')}`)}
