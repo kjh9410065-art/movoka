@@ -53,39 +53,101 @@ function esc(v){return String(v||'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&
 // 외부 HTTP/HTTPS 주소만 허용하고 MOVOKA 자체 주소는 제외합니다.
 function validBookingUrl(url){try{const value=String(url||'').trim();if(!value)return '';const parsed=new URL(value,location.href);if(!/^https?:$/.test(parsed.protocol))return '';if(parsed.origin===location.origin)return '';return parsed.href}catch{return ''}}
 
+// 예매와 관계없는 일반 포털/검색/소셜 링크는 예매처에서 제외합니다.
+function isNonBookingHost(host){
+  const h=host.replace(/^www\./,'').toLowerCase();
+  if(h==='naver.com'||h.endsWith('.naver.com'))return !h.startsWith('booking.naver.com');
+  if(h==='kakao.com'||h.endsWith('.kakao.com'))return !h.startsWith('booking.kakao.com');
+  if(h==='daum.net'||h.endsWith('.daum.net'))return true;
+  if(h==='google.com'||h.endsWith('.google.com'))return true;
+  if(h==='youtube.com'||h.endsWith('.youtube.com'))return true;
+  if(h==='youtu.be')return true;
+  if(h==='instagram.com'||h.endsWith('.instagram.com'))return true;
+  if(h==='facebook.com'||h.endsWith('.facebook.com'))return true;
+  if(h==='kopis.or.kr'||h.endsWith('.kopis.or.kr'))return true;
+  return false;
+}
+
+// URL을 예매처 비교용 키로 정규화해 같은 사이트 중복을 제거합니다.
+function bookingKey(url){
+  try{
+    const u=new URL(url);
+    const host=u.hostname.replace(/^www\./,'').toLowerCase();
+    const known=[
+      [/interpark\.com$/,'interpark'],[/yes24\.com$/,'yes24'],[/ticketlink\.co\.kr$/,'ticketlink'],
+      [/melonticket\.com$/,'melonticket'],[/playticket\.co\.kr$/,'playticket'],[/univticket\.com$/,'univticket'],
+      [/sac\.or\.kr$/,'sac'],[/sejongpac\.or\.kr$/,'sejong'],[/lotteconcerthall\.com$/,'lotteconcerthall']
+    ];
+    for(const [re,key] of known)if(re.test(host))return key;
+    return host;
+  }catch{return ''}
+}
+
 // URL에서 사람이 읽을 수 있는 예매사이트 이름을 추출합니다.
-function bookingSiteName(url){try{const host=new URL(url).hostname.replace(/^www\./,'').toLowerCase();const names={'ticket.interpark.com':'인터파크 티켓','tickets.interpark.com':'인터파크 티켓','ticket.yes24.com':'YES24 티켓','tickets.yes24.com':'YES24 티켓','ticketlink.co.kr':'티켓링크','www.ticketlink.co.kr':'티켓링크','melonticket.com':'멜론티켓','ticket.melon.com':'멜론티켓','tickets.interpark.com':'인터파크 티켓','lotteconcerthall.com':'롯데콘서트홀','sac.or.kr':'예술의전당','tickets.com':'Tickets.com'};if(names[host])return names[host];const parts=host.split('.');return parts.length>=2?parts[parts.length-2].toUpperCase():host.toUpperCase()}catch{return '예매사이트'}}
+function bookingSiteName(url,name=''){
+  if(String(name||'').trim())return String(name).trim();
+  try{
+    const host=new URL(url).hostname.replace(/^www\./,'').toLowerCase();
+    const names={
+      'ticket.interpark.com':'인터파크 티켓','tickets.interpark.com':'인터파크 티켓','ticket.yes24.com':'YES24 티켓','tickets.yes24.com':'YES24 티켓',
+      'ticketlink.co.kr':'티켓링크','melonticket.com':'멜론티켓','ticket.melon.com':'멜론티켓','playticket.co.kr':'플레이티켓',
+      'univticket.com':'대학로티켓닷컴','lotteconcerthall.com':'롯데콘서트홀','sac.or.kr':'예술의전당','sejongpac.or.kr':'세종문화회관',
+      'booking.naver.com':'네이버 예약','booking.kakao.com':'카카오 예약'
+    };
+    if(names[host])return names[host];
+    const parts=host.split('.');
+    const base=parts.length>=3&&['co','or','go','ac'].includes(parts[parts.length-2])?parts[parts.length-3]:parts.length>=2?parts[parts.length-2]:host;
+    return base.toUpperCase();
+  }catch{return '예매사이트'}
+}
 
 // 예매사이트 하나를 새 탭으로 엽니다. 현재 MOVOKA 탭은 그대로 유지합니다.
 function openBooking(url){const href=validBookingUrl(url);if(!href){alert('등록된 외부 예매사이트가 없습니다.');return}window.open(href,'_blank','noopener,noreferrer')}
 
+// KOPIS가 제공한 예매처를 실제 예매 링크만 남기고 중복 제거합니다.
+function normalizeBookingLinks(entries){
+  const seen=new Set();
+  return entries.map(item=>({name:String(item?.name||'').trim(),url:validBookingUrl(item?.url)}))
+    .filter(item=>{
+      if(!item.url)return false;
+      try{
+        const u=new URL(item.url);
+        if(isNonBookingHost(u.hostname))return false;
+        const key=bookingKey(item.url);
+        if(!key||seen.has(key))return false;
+        seen.add(key);
+        return true;
+      }catch{return false}
+    });
+}
+
 // 여러 예매처를 실제 사이트 이름으로 표시합니다.
-function showBookingList(urls){
-  const unique=[...new Set(urls.map(validBookingUrl).filter(Boolean))];
+function showBookingList(entries){
+  const unique=normalizeBookingLinks(entries);
   if(!unique.length){alert('등록된 외부 예매사이트가 없습니다.');return}
-  $('bookingLinks').innerHTML=unique.map(url=>`<button onclick="openBooking('${esc(url)}');closeBookingList()">${esc(bookingSiteName(url))}</button>`).join('');
+  $('bookingLinks').innerHTML=unique.map(item=>`<button onclick="openBooking('${esc(item.url)}');closeBookingList()">${esc(bookingSiteName(item.url,item.name))}</button>`).join('');
   $('bookingList').style.display='flex';
 }
 
 // 예매처 선택 팝업을 닫습니다.
 function closeBookingList(){$('bookingList').style.display='none'}
 
-// KOPIS 상세정보에서 등록된 모든 relateurl을 찾아 예매처 선택창에 표시합니다.
-async function openBookingFor(id,storedUrl){
-  const saved=validBookingUrl(storedUrl);
-  if(saved){showBookingList([saved]);return}
+// KOPIS 상세정보에서 예매처 이름과 URL을 함께 읽고 잘못된 링크와 중복을 제거합니다.
+async function openBookingFor(id){
   try{
     const response=await fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'no-store'});
     const text=await response.text();
     if(!response.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');
     const doc=new DOMParser().parseFromString(text,'text/xml');
+    const names=Array.from(doc.querySelectorAll('relatenm')).map(x=>x.textContent.trim());
     const urls=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim());
-    showBookingList(urls);
+    const entries=urls.map((url,index)=>({name:names[index]||'',url}));
+    showBookingList(entries);
   }catch(error){alert(error.message||'예매사이트 정보를 불러오지 못했습니다.')}
 }
 
 // 공연 카드에는 '예매사이트' 버튼을 표시합니다.
-function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onclick="openBookingFor('${esc(x.mt20id)}','${esc(x.bookingUrl||'')}')">예매사이트</button></div></div></article>`}
+function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onclick="openBookingFor('${esc(x.mt20id)}')">예매사이트</button></div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
 function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>'; $('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
