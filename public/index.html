@@ -133,6 +133,18 @@ function showBookingList(entries){
 function closeBookingList(){$('bookingList').style.display='none'}
 
 // KOPIS 상세정보에서 예매처 이름과 URL을 함께 읽고 잘못된 링크와 중복을 제거합니다.
+// 예매정보 요청을 미리 시작해 첫 클릭 지연을 줄입니다.
+const bookingRequests=new Map();
+
+function prefetchBooking(id){
+  if(bookingRequests.has(id))return bookingRequests.get(id);
+  const request=fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'})
+    .then(response=>response.text().then(text=>({ok:response.ok,text})))
+    .catch(()=>null);
+  bookingRequests.set(id,request);
+  return request;
+}
+
 async function openBookingFor(id){
   try{
     const response=await fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'});
@@ -147,7 +159,7 @@ async function openBookingFor(id){
 }
 
 // 공연 카드에는 '예매사이트' 버튼을 표시합니다.
-function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onclick="openBookingFor('${esc(x.mt20id)}')">예매사이트</button></div></div></article>`}
+function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><button onclick="detail('${esc(x.mt20id)}')">상세보기</button><button class="booking" onmouseenter="prefetchBooking('${esc(x.mt20id)}')" onclick="openBookingFor('${esc(x.mt20id)}')">예매사이트</button></div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
 function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>'; $('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
