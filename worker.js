@@ -67,21 +67,11 @@ function normalizeBookingUrl(value) {
   }
 }
 
-// 예매사이트가 실제로 응답하는지 확인합니다. HEAD가 거부되면 GET으로 확인합니다.
+// 예매사이트 URL의 형식만 확인합니다.
+// 실제 예매사이트에 접속해서 응답 여부를 검사하면 사이트마다 수 초가 걸릴 수 있으므로,
+// 목록 표시 단계에서는 네트워크 검사를 하지 않습니다.
 async function isReachable(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
-  try {
-    let response = await fetch(url, { method: 'HEAD', redirect: 'follow', signal: controller.signal });
-    if (response.status === 405 || response.status === 403) {
-      response = await fetch(url, { method: 'GET', redirect: 'follow', signal: controller.signal, headers: { Range: 'bytes=0-0' } });
-    }
-    return response.status >= 200 && response.status < 400;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(timer);
-  }
+  return Boolean(normalizeBookingUrl(url));
 }
 
 // KOPIS 상세 XML에서 중복/잘못된 예매사이트를 제거하고 실제 접속 가능한 사이트만 남깁니다.
@@ -146,13 +136,32 @@ export default {
     // 공연 상세정보를 제공하면서 예매사이트는 중복/오류 링크를 정리합니다.
     if (url.pathname === '/api/performance') {
       const id = url.searchParams.get('mt20id') || '';
-      if (!/^PF\d+$/.test(id)) return Response.json({ ok: false, error: '잘못된 공연 ID입니다.' }, { status: 400 });
+      if (!/^PF\\d+$/.test(id)) return Response.json({ ok: false, error: '잘못된 공연 ID입니다.' }, { status: 400 });
+
+      // 같은 공연의 예매사이트 정보는 잠시 캐시해 버튼을 다시 눌렀을 때 즉시 표시합니다.
+      const cache = caches.default;
+      const cacheKey = new Request(url.toString(), request);
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+
       try {
-        const detailUrl = new URL(`${KOPIS_BASE}/${id}`);
+        const detailUrl = new URL(KOPIS_BASE + '/' + id);
         detailUrl.searchParams.set('service', key);
         const xml = await callKopis(detailUrl);
+
+        // 예매처 링크는 형식/중복만 정리하고 외부 사이트에 실제 접속하는 검사는 하지 않습니다.
+        // 이렇게 해야 목록 팝업이 외부 사이트 응답을 기다리지 않고 바로 표시됩니다.
         const cleaned = await cleanBookingSites(xml);
-        return new Response(cleaned, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
+        const response = new Response(cleaned, {
+          headers: {
+            'Content-Type': 'application/xml; charset=utf-8',
+            'Cache-Control': 'public, max-age=600'
+          }
+        });
+
+        // 10분 동안 같은 공연의 상세 예매정보를 재사용합니다.
+        await cache.put(cacheKey, response.clone());
+        return response;
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
       }
