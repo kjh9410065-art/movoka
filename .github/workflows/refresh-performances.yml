@@ -12,6 +12,7 @@ on:
       - 'scripts/refresh-performances.mjs'
       - 'scripts/generate-sitemap.mjs'
       - 'public/index.html'
+      - 'public/data/performances.json'
       - 'worker.js'
       - '.github/workflows/refresh-performances.yml'
   # 필요할 때 GitHub Actions 화면에서 수동 실행할 수 있습니다.
