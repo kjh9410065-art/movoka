@@ -10,6 +10,8 @@ on:
   push:
     paths:
       - 'scripts/refresh-performances.mjs'
+      - 'scripts/generate-sitemap.mjs'
+      - 'public/index.html'
       - 'worker.js'
       - '.github/workflows/refresh-performances.yml'
   # 필요할 때 GitHub Actions 화면에서 수동 실행할 수 있습니다.
@@ -36,11 +38,15 @@ jobs:
       - name: Refresh performance data
         run: node scripts/refresh-performances.mjs
 
-      # 변경된 공연 데이터만 GitHub에 커밋합니다.
+      # 갱신된 공연 데이터로 검색엔진용 sitemap도 다시 만듭니다.
+      - name: Generate sitemap
+        run: node scripts/generate-sitemap.mjs
+
+      # 변경된 공연 데이터와 sitemap만 GitHub에 커밋합니다.
       - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/performances.json
+          git add public/data/performances.json public/sitemap.xml
           git diff --cached --quiet || git commit -m "chore: refresh MOVOKA performance data"
           git push
