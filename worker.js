@@ -241,6 +241,22 @@ export default {
       }
     }
 
+    // 홈페이지 HTML에도 네이버 소유확인 태그를 강제로 삽입해 배포된 실제 페이지에서 항상 확인되도록 합니다.
+    if (url.pathname === '/') {
+      const assetResponse = await env.ASSETS.fetch(request);
+      if (assetResponse.ok && (assetResponse.headers.get('content-type') || '').includes('text/html')) {
+        const html = await assetResponse.text();
+        const verificationTag = '<meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />';
+        const updatedHtml = html.includes('name="naver-site-verification"')
+          ? html
+          : html.replace(/<head>/i, `<head>\\n${verificationTag}`);
+        return new Response(updatedHtml, {
+          status: assetResponse.status,
+          headers: assetResponse.headers
+        });
+      }
+    }
+
     return env.ASSETS.fetch(request);
   },
 
