@@ -191,12 +191,23 @@ function parsePerformanceDetail(xml) {
 // 공연 상세 페이지에서 사용할 줄거리를 KOPIS 상세 API로 가져옵니다.
 async function fetchPerformanceDetail(key, id) {
   if (!key) return { sty: '', styurls: '' };
+
   try {
+    // 상세 API는 목록 API와 응답 구조가 다를 수 있으므로 별도로 직접 읽습니다.
     const detailUrl = new URL(KOPIS_BASE + '/' + id);
     detailUrl.searchParams.set('service', key);
-    const xml = await callKopis(detailUrl);
+
+    // KOPIS 상세 XML 원문을 그대로 받아 줄거리 태그를 파싱합니다.
+    const response = await fetch(detailUrl.toString(), { redirect: 'follow' });
+    const xml = await response.text();
+
+    // HTTP 오류가 발생하면 빈 상세정보를 반환합니다.
+    if (!response.ok) return { sty: '', styurls: '' };
+
+    // XML 응답에 줄거리 태그가 없더라도 상세 페이지 자체는 정상 표시합니다.
     return parsePerformanceDetail(xml);
   } catch {
+    // KOPIS 장애나 네트워크 오류가 있어도 상세 페이지가 깨지지 않게 합니다.
     return { sty: '', styurls: '' };
   }
 }
