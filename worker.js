@@ -167,19 +167,8 @@ export default {
 
     // 브라우저가 자동으로 요청하는 /favicon.ico도 직접 처리해 파비콘 누락을 방지합니다.
     if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.svg') {
-      // 저장소의 실제 MOVOKA 파비콘 PNG를 그대로 반환해 별도의 임의 SVG가 표시되지 않게 합니다.
-      const assetUrl = new URL('/favicon.png?v=20260919', request.url);
-      const faviconResponse = await env.ASSETS.fetch(new Request(assetUrl.toString()));
-      if (faviconResponse.ok) {
-        return new Response(faviconResponse.body, {
-          status: faviconResponse.status,
-          headers: {
-            'Content-Type': 'image/png',
-            'Cache-Control': 'public, max-age=31536000, immutable'
-          }
-        });
-      }
-      return faviconResponse;
+      // 저장소에 보관된 실제 MOVOKA 파비콘으로 연결해 임의로 만든 아이콘이 표시되지 않게 합니다.
+      return Response.redirect('https://raw.githubusercontent.com/kjh9410065-art/movoka/main/%EB%AA%A8%EB%B3%B4%EC%B9%B4%20%ED%8C%8C%EB%B9%84%EC%BD%98.png', 302);
     }
 
 
