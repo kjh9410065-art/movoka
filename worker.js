@@ -111,7 +111,7 @@ function escHtml(value) {
 }
 
 // 공연 상세 페이지용 기본 템플릿을 생성합니다.
-function renderPerformancePage(item) {
+function renderPerformancePage(item, detail = {}) {
   const title = escHtml(item.prfnm || '공연정보');
   const description = escHtml(`${item.prfnm || '공연'} | ${item.prfpdfrom || ''} ~ ${item.prfpdto || ''} | ${item.fcltynm || ''} - MOVOKA 공연정보`);
   const poster = item.poster ? `<meta property="og:image" content="${escHtml(item.poster)}">\n` : '';
@@ -142,6 +142,7 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 <strong>지역</strong><br>${escHtml(item.area || '정보 없음')}
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}
+${detail.sty ? `<div class="cast"><strong>줄거리</strong><br>${escHtml(detail.sty).replace(/\n/g, '<br>')}</div>` : ''}
 <a class="home" href="/">다른 공연 찾아보기</a>
 </article>
 <footer style="margin-top:24px;color:#73798a;font-size:13px">
@@ -152,6 +153,24 @@ ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item
 </main></body></html>`;
 }
 
+// KOPIS 상세 XML에서 줄거리(sty)와 소개 이미지를 읽습니다.
+function parsePerformanceDetail(xml) {
+  const get = tag => xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'))?.[1]?.trim() || '';
+  return { sty: get('sty'), styurls: get('styurls') };
+}
+
+// 공연 상세 페이지에서 사용할 줄거리를 KOPIS 상세 API로 가져옵니다.
+async function fetchPerformanceDetail(key, id) {
+  if (!key) return { sty: '', styurls: '' };
+  try {
+    const detailUrl = new URL(KOPIS_BASE + '/' + id);
+    detailUrl.searchParams.set('service', key);
+    const xml = await callKopis(detailUrl);
+    return parsePerformanceDetail(xml);
+  } catch {
+    return { sty: '', styurls: '' };
+  }
+}
 // 정적 공연 JSON에서 특정 공연을 찾아 상세 페이지를 만듭니다.
 async function findPerformance(env, id) {
   const response = await env.ASSETS.fetch(new Request('https://movoka.tcflick.com/data/performances.json'));
@@ -193,7 +212,8 @@ export default {
     if (performanceMatch) {
       const item = await findPerformance(env, performanceMatch[1]);
       if (!item) return new Response('공연 정보를 찾을 수 없습니다.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-      return new Response(renderPerformancePage(item), {
+      const detail = await fetchPerformanceDetail(key, performanceMatch[1]);
+      return new Response(renderPerformancePage(item, detail), {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'public, max-age=3600'
