@@ -175,11 +175,14 @@ function parsePerformanceDetail(xml) {
     return match?.[1]?.trim() || '';
   };
 
-  // KOPIS가 반환하는 CDATA 표기를 제거합니다.
-  const clean = value => String(value || '')
-    .replace(/^<!\\[CDATA\\[/i, '')
-    .replace(/\\]\\]>$/i, '')
-    .trim();
+  // KOPIS가 반환하는 CDATA 표기를 정규식 없이 안전하게 제거합니다.
+  const clean = value => {
+    const text = String(value || '').trim();
+    if (text.startsWith('<![CDATA[') && text.endsWith(']]>')) {
+      return text.slice(9, -3).trim();
+    }
+    return text;
+  };
 
   // 줄거리와 소개 이미지 목록을 반환합니다.
   return {
