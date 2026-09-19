@@ -165,6 +165,17 @@ export default {
     const url = new URL(request.url);
     const key = env.KOPIS_API_KEY;
 
+    // robots.txt를 Worker에서 직접 반환해 네이버 검색로봇이 항상 200(text/plain)으로 읽도록 합니다.
+    if (url.pathname === '/robots.txt') {
+      return new Response('User-agent: *\\nAllow: /\\n\\nSitemap: https://movoka.tcflick.com/sitemap.xml\\n', {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cache-Control': 'public, max-age=3600'
+        }
+      });
+    }
+
     // 브라우저가 자동으로 요청하는 /favicon.ico도 직접 처리해 파비콘 누락을 방지합니다.
     if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.svg') {
       // 저장소에 보관된 실제 MOVOKA 파비콘으로 연결해 임의로 만든 아이콘이 표시되지 않게 합니다.
