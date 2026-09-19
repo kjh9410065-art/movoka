@@ -169,10 +169,22 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 
 // KOPIS 상세 XML에서 줄거리(sty)와 소개 이미지를 읽습니다.
 function parsePerformanceDetail(xml) {
-  const get = tag => xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'))?.[1]?.trim() || '';
-  // KOPIS 응답은 CDATA를 사용할 수 있으므로 태그 내부의 HTML/CDATA를 함께 정리합니다.
-  const clean = value => String(value || '').replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim();
-  return { sty: clean(get('sty')), styurls: clean(get('styurls')) };
+  // KOPIS 상세 XML은 CDATA를 포함할 수 있고 태그에 공백/속성이 붙는 경우도 있으므로 유연하게 읽습니다.
+  const get = tag => {
+    const match = String(xml || '').match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>', 'i'));
+    return match?.[1]?.trim() || '';
+  };
+
+  // CDATA와 XML 공백을 제거한 뒤 줄거리 원문을 반환합니다.
+  const clean = value => String(value || '')
+    .replace(/^<!\\[CDATA\\[/i, '')
+    .replace(/\\]\\]>$/i, '')
+    .trim();
+
+  return {
+    sty: clean(get('sty')),
+    styurls: clean(get('styurls'))
+  };
 }
 
 // 공연 상세 페이지에서 사용할 줄거리를 KOPIS 상세 API로 가져옵니다.
