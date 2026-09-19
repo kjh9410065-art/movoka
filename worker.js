@@ -144,16 +144,14 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 <strong>지역</strong><br>${escHtml(item.area || '정보 없음')}
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}
-<div class="detail-actions"><button class="action-btn primary" type="button" onclick="openSynopsis()">줄거리</button><button class="action-btn primary" type="button" onclick="openBookingFor('${escHtml(item.mt20id)}')">예매사이트</button><a class="action-btn" href="/">다른 공연 찾아보기</a></div>
-<div class="synopsis-box" id="synopsisBox" style="display:none"><strong>줄거리</strong><div id="synopsisText" style="margin-top:10px;line-height:1.8">${detail.sty ? escHtml(detail.sty).replace(/\n/g, '<br>') : '등록된 줄거리 정보가 없습니다.'}</div></div>
-</article>
+<div class="detail-actions">${detail.sty ? '<button class="action-btn primary" type="button" onclick="openSynopsis()">줄거리</button>' : ''}<button class="action-btn primary" type="button" onclick="openBookingFor(\'${escHtml(item.mt20id)}\')">예매사이트</button><a class="action-btn" href="/">다른 공연 찾아보기</a></div>\n${detail.sty ? '<div class="synopsis-box" id="synopsisBox" style="display:none"><strong>줄거리</strong><div id="synopsisText" style="margin-top:10px;line-height:1.8">${escHtml(detail.sty).replace(/\\n/g, '<br>')}</div><div style="margin-top:12px;font-size:12px;color:#73798a">줄거리 출처: KOPIS 공연예술통합전산망</div></div>' : ''}\n</article></article>
 <div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()"><div class="booking-box"><h3>예매사이트 선택</h3><div class="booking-links" id="bookingLinks"></div><button class="booking-close" onclick="closeBookingList()">닫기</button></div></div>
 <script>
 /* 버튼으로만 다크모드를 전환하고 선택값을 저장합니다. */
 (function(){const key='movoka-theme';const apply=mode=>{document.body.classList.toggle('dark',mode==='dark');const b=document.getElementById('themeToggle');if(b)b.textContent=mode==='dark'?'☀️ 라이트모드':'🌙 다크모드';};apply(localStorage.getItem(key)||'light');document.getElementById('themeToggle').onclick=()=>{const next=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(key,next);apply(next);};})();
 
 /* 줄거리 버튼을 눌렀을 때만 내용을 펼칩니다. */
-function openSynopsis(){const box=document.getElementById('synopsisBox');if(!box)return;const willOpen=box.style.display==='none';box.style.display=willOpen?'block':'none';}
+function openSynopsis(){const box=document.getElementById('synopsisBox');if(!box)return;const willOpen=box.style.display==='none';box.style.display=willOpen?'block':'none';}\n\n${detail.sty ? '' : "window.setTimeout(()=>alert('이 공연의 정보는 KOPIS 공연예술통합전산망에서 제공받습니다.\\n\\nKOPIS에 등록된 줄거리 정보가 없어 MOVOKA에도 줄거리를 표시하지 않습니다.'),0);"}
 
 /* 상세 페이지에서도 KOPIS 예매처를 불러옵니다. */
 async function openBookingFor(id){try{const r=await fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'});const text=await r.text();if(!r.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');const doc=new DOMParser().parseFromString(text,'text/xml');const names=Array.from(doc.querySelectorAll('relatenm')).map(x=>x.textContent.trim());const urls=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim());const links=urls.map((url,i)=>({name:names[i]||'예매사이트',url})).filter(x=>/^https?:\\/\\//.test(x.url));if(!links.length)throw new Error('등록된 외부 예매사이트가 없습니다.');document.getElementById('bookingLinks').innerHTML=links.map(x=>'<button type="button" onclick="window.open(\\''+x.url.replace(/'/g,'%27')+'\\',\\'_blank\\',\\'noopener,noreferrer\\');closeBookingList()">'+x.name.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))+'</button>').join('');document.getElementById('bookingList').style.display='flex';}catch(e){alert(e.message||'예매사이트 정보를 불러오지 못했습니다.');}}
