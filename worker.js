@@ -143,7 +143,13 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}
 <a class="home" href="/">다른 공연 찾아보기</a>
-</article></main></body></html>`;
+</article>
+<footer style="margin-top:24px;color:#73798a;font-size:13px">
+<a href="/terms.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">이용약관</a> ·
+<a href="/privacy.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">개인정보처리방침</a> ·
+<a href="/contact.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">문의하기</a>
+</footer>
+</main></body></html>`;
 }
 
 // 정적 공연 JSON에서 특정 공연을 찾아 상세 페이지를 만듭니다.
