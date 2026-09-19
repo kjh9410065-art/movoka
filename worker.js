@@ -165,6 +165,22 @@ export default {
     const url = new URL(request.url);
     const key = env.KOPIS_API_KEY;
 
+    // 브라우저가 자동으로 요청하는 /favicon.ico도 직접 처리해 파비콘 누락을 방지합니다.
+    if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.svg') {
+      const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#20d7ff"/><stop offset=".55" stop-color="#7465ff"/><stop offset="1" stop-color="#ff3bbf"/></linearGradient></defs>
+<rect width="64" height="64" rx="14" fill="#11131b"/>
+<path d="M10 48V16h8l14 18 14-18h8v32h-9V30L32 47 19 30v18z" fill="url(#g)"/>
+</svg>`;
+      return new Response(favicon, {
+        headers: {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        }
+      });
+    }
+
+
     // 공연 상세 URL은 검색엔진이 직접 읽을 수 있는 HTML 페이지로 제공합니다.
     const performanceMatch = url.pathname.match(/^\/performance\/(PF\d+)\/?$/);
     if (performanceMatch) {
