@@ -193,24 +193,29 @@ function parsePerformanceDetail(xml) {
 
 // 공연 상세 페이지에서 사용할 줄거리를 KOPIS 상세 API로 가져옵니다.
 async function fetchPerformanceDetail(key, id) {
-  if (!key) return { sty: '', styurls: '' };
+  if (!key || !/^PF\\d+$/.test(id)) return { sty: '', styurls: '' };
 
   try {
-    // 상세 API는 목록 API와 응답 구조가 다를 수 있으므로 별도로 직접 읽습니다.
-    const detailUrl = new URL(KOPIS_BASE + '/' + id);
+    // KOPIS 상세 API는 공연 ID를 경로에 넣고 서비스 키를 쿼리로 전달합니다.
+    const detailUrl = new URL(KOPIS_BASE + '/' + encodeURIComponent(id));
     detailUrl.searchParams.set('service', key);
 
-    // KOPIS 상세 XML 원문을 그대로 받아 줄거리 태그를 파싱합니다.
-    const response = await fetch(detailUrl.toString(), { redirect: 'follow' });
+    // 상세 XML은 캐시하지 않고 최신 응답을 직접 요청합니다.
+    const response = await fetch(detailUrl.toString(), {
+      method: 'GET',
+      redirect: 'follow',
+      cache: 'no-store',
+      headers: { 'Accept': 'application/xml,text/xml,*/*' }
+    });
+
     const xml = await response.text();
 
-    // HTTP 오류가 발생하면 빈 상세정보를 반환합니다.
-    if (!response.ok) return { sty: '', styurls: '' };
+    // KOPIS가 정상 XML을 반환한 경우에만 줄거리 태그를 읽습니다.
+    if (!response.ok || !/<(?:dbs|db)\\b/i.test(xml)) return { sty: '', styurls: '' };
 
-    // XML 응답에 줄거리 태그가 없더라도 상세 페이지 자체는 정상 표시합니다.
     return parsePerformanceDetail(xml);
   } catch {
-    // KOPIS 장애나 네트워크 오류가 있어도 상세 페이지가 깨지지 않게 합니다.
+    // 외부 API 오류가 발생해도 공연 상세 페이지는 정상 출력합니다.
     return { sty: '', styurls: '' };
   }
 }
@@ -233,7 +238,7 @@ export default {
         status: 200,
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600'
+          'Cache-Control': 'no-store, no-cache, must-revalidate'
         }
       });
     }
@@ -259,7 +264,7 @@ export default {
       return new Response(renderPerformancePage(item, detail), {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600'
+          'Cache-Control': 'no-store, no-cache, must-revalidate'
         }
       });
     }
