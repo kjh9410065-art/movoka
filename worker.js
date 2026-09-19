@@ -249,10 +249,18 @@ export default {
         const verificationTag = '<meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />';
         const updatedHtml = html.includes('name="naver-site-verification"')
           ? html
-          : html.replace(/<head>/i, `<head>\\n${verificationTag}`);
+          : html.replace(/<head>/i, `<head>\n${verificationTag}`);
+        // 원본 HTML의 길이/압축/ETag 헤더가 변경된 HTML과 충돌하지 않도록 제거합니다.
+        const headers = new Headers(assetResponse.headers);
+        headers.delete('content-length');
+        headers.delete('content-encoding');
+        headers.delete('etag');
+        headers.set('content-type', 'text/html; charset=utf-8');
+        headers.set('cache-control', 'no-store, no-cache, must-revalidate');
+
         return new Response(updatedHtml, {
           status: assetResponse.status,
-          headers: assetResponse.headers
+          headers
         });
       }
     }
