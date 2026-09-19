@@ -128,10 +128,12 @@ function renderPerformancePage(item, detail = {}) {
 <link rel="canonical" href="https://movoka.tcflick.com/performance/${encodeURIComponent(item.mt20id)}">
 <meta property="og:title" content="${title} | MOVOKA">
 <meta property="og:description" content="${description}">
-${poster}<style>body{margin:0;background:#f5f6fa;color:#171923;font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif}.wrap{max-width:760px;margin:auto;padding:32px 18px 60px}.back{display:inline-block;margin-bottom:20px;color:#5b5bd6;text-decoration:none;font-weight:800}.card{background:#fff;border:1px solid #e5e7ee;border-radius:18px;padding:20px}.poster{max-width:280px;margin:auto}.poster img{display:block;width:100%;border-radius:12px}.tag{margin-top:20px;color:#5b5bd6;font-weight:800}.h1{font-size:32px;line-height:1.3;margin:8px 0 20px}.meta{line-height:1.9;color:#5f6575}.cast{margin-top:20px;padding-top:20px;border-top:1px solid #eee}.home{display:inline-block;margin-top:20px;padding:11px 16px;border-radius:10px;background:#5b5bd6;color:#fff;text-decoration:none;font-weight:800}</style>
+${poster}<style>
+*{box-sizing:border-box}body{margin:0;background:#f5f6fa;color:#171923;font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif}.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}.wrap{max-width:760px;margin:auto;padding:32px 18px 60px}.back{display:inline-block;color:#5b5bd6;text-decoration:none;font-weight:800}.card{background:#fff;border:1px solid #e5e7ee;border-radius:18px;padding:20px}.poster{max-width:280px;margin:auto}.poster img{display:block;width:100%;border-radius:12px}.tag{margin-top:20px;color:#5b5bd6;font-weight:800}.h1{font-size:32px;line-height:1.3;margin:8px 0 20px}.meta{line-height:1.9;color:#5f6575}.cast{margin-top:20px;padding-top:20px;border-top:1px solid #eee}.detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.action-btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 16px;border-radius:10px;border:1px solid #ddd;background:#fff;color:inherit;text-decoration:none;font-weight:800;cursor:pointer}.action-btn.primary{background:#5b5bd6;color:#fff;border-color:#5b5bd6}.theme-btn{border:1px solid #ddd;background:#fff;color:inherit;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer}.booking-list{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}.booking-box{width:min(420px,100%);background:#fff;color:#171923;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.2)}.booking-box h3{margin:0 0 14px}.booking-links{display:grid;gap:9px}.booking-links button{width:100%;padding:12px;border:1px solid #ddd;background:#fff;color:inherit;border-radius:10px;text-align:left;font-weight:700;cursor:pointer}.booking-close{margin-top:12px;width:100%;padding:10px;border:0;border-radius:10px;background:#f1f2f6;color:inherit;cursor:pointer}.dark{background:#15171c;color:#f1f3f6}.dark .card,.dark .booking-box{background:#20232a;color:#f1f3f6;border-color:#343944}.dark .meta{color:#b8becb}.dark .cast{border-color:#343944}.dark .action-btn,.dark .theme-btn,.dark .booking-links button{background:#252932;color:#f1f3f6;border-color:#3a3f4b}.dark .booking-close{background:#30343d}
+</style>
 </head>
 <body><main class="wrap">
-<a class="back" href="/">← MOVOKA 공연 목록</a>
+<div class="topbar"><a class="back" href="/">← MOVOKA 공연 목록</a><button class="theme-btn" id="themeToggle" type="button">🌙 다크모드</button></div>
 <article class="card">
 ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${title} 포스터"></div>` : ''}
 <div class="tag">${escHtml(status)} · ${escHtml(item.genrenm || '공연')}</div>
@@ -143,8 +145,17 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}
 ${detail.sty ? `<div class="cast"><strong>줄거리</strong><br>${escHtml(detail.sty).replace(/\n/g, '<br>')}</div>` : ''}
-<a class="home" href="/">다른 공연 찾아보기</a>
+<div class="detail-actions"><button class="action-btn primary" type="button" onclick="openBookingFor('${escHtml(item.mt20id)}')">예매사이트</button><a class="action-btn" href="/">다른 공연 찾아보기</a></div>
 </article>
+<div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()"><div class="booking-box"><h3>예매사이트 선택</h3><div class="booking-links" id="bookingLinks"></div><button class="booking-close" onclick="closeBookingList()">닫기</button></div></div>
+<script>
+/* 버튼으로만 다크모드를 전환하고 선택값을 저장합니다. */
+(function(){const key='movoka-theme';const apply=mode=>{document.body.classList.toggle('dark',mode==='dark');const b=document.getElementById('themeToggle');if(b)b.textContent=mode==='dark'?'☀️ 라이트모드':'🌙 다크모드';};apply(localStorage.getItem(key)||'light');document.getElementById('themeToggle').onclick=()=>{const next=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(key,next);apply(next);};})();
+
+/* 상세 페이지에서도 KOPIS 예매처를 불러옵니다. */
+async function openBookingFor(id){try{const r=await fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'});const text=await r.text();if(!r.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');const doc=new DOMParser().parseFromString(text,'text/xml');const names=Array.from(doc.querySelectorAll('relatenm')).map(x=>x.textContent.trim());const urls=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim());const links=urls.map((url,i)=>({name:names[i]||'예매사이트',url})).filter(x=>/^https?:\\/\\//.test(x.url));if(!links.length)throw new Error('등록된 외부 예매사이트가 없습니다.');document.getElementById('bookingLinks').innerHTML=links.map(x=>'<button type="button" onclick="window.open(\\''+x.url.replace(/'/g,'%27')+'\\',\\'_blank\\',\\'noopener,noreferrer\\');closeBookingList()">'+x.name.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))+'</button>').join('');document.getElementById('bookingList').style.display='flex';}catch(e){alert(e.message||'예매사이트 정보를 불러오지 못했습니다.');}}
+function closeBookingList(){document.getElementById('bookingList').style.display='none';}
+</script>
 <footer style="margin-top:24px;color:#73798a;font-size:13px">
 <a href="/terms.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">이용약관</a> ·
 <a href="/privacy.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">개인정보처리방침</a> ·
