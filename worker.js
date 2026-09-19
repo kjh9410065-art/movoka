@@ -169,18 +169,19 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 
 // KOPIS 상세 XML에서 줄거리(sty)와 소개 이미지를 읽습니다.
 function parsePerformanceDetail(xml) {
-  // KOPIS 상세 XML은 CDATA를 포함할 수 있고 태그에 공백/속성이 붙는 경우도 있으므로 유연하게 읽습니다.
+  // KOPIS 상세 XML에서 태그 이름을 대소문자와 속성 여부에 관계없이 찾습니다.
   const get = tag => {
-    const match = String(xml || '').match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</' + tag + '>', 'i'));
+    const match = String(xml || '').match(new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)</' + tag + '>', 'i'));
     return match?.[1]?.trim() || '';
   };
 
-  // CDATA와 XML 공백을 제거한 뒤 줄거리 원문을 반환합니다.
+  // KOPIS가 반환하는 CDATA 표기를 제거합니다.
   const clean = value => String(value || '')
     .replace(/^<!\\[CDATA\\[/i, '')
     .replace(/\\]\\]>$/i, '')
     .trim();
 
+  // 줄거리와 소개 이미지 목록을 반환합니다.
   return {
     sty: clean(get('sty')),
     styurls: clean(get('styurls'))
