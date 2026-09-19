@@ -176,6 +176,11 @@ export default {
       });
     }
 
+    // 링크 미리보기 이미지도 안정적인 MOVOKA URL로 제공합니다.
+    if (url.pathname === '/og-image.png') {
+      return Response.redirect('https://raw.githubusercontent.com/kjh9410065-art/movoka/main/%EB%AA%A8%EB%B3%B4%EC%B9%B4%20%EB%A7%81%ED%81%AC%20%EB%AF%B8%EB%A6%AC%EB%B3%B4%EA%B8%B0.png', 302);
+    }
+
     // 브라우저가 자동으로 요청하는 /favicon.ico도 직접 처리해 파비콘 누락을 방지합니다.
     if (url.pathname === '/favicon.ico' || url.pathname === '/favicon.svg') {
       // 저장소에 보관된 실제 MOVOKA 파비콘으로 연결해 임의로 만든 아이콘이 표시되지 않게 합니다.
@@ -202,9 +207,16 @@ export default {
       if (assetResponse.ok && (assetResponse.headers.get('content-type') || '').includes('text/html')) {
         const html = await assetResponse.text();
         const verificationTag = '<meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />';
-        const updatedHtml = html.includes('name="naver-site-verification"')
-          ? html
-          : html.replace(/<head>/i, `<head>\n${verificationTag}`);
+        let updatedHtml = html;
+        const headFallback = [
+          !updatedHtml.includes('name="naver-site-verification"') ? verificationTag : '',
+          !updatedHtml.includes('property="og:title"') ? '<meta property="og:title" content="MOVOKA · 모보카 | 공연정보와 예매사이트">' : '',
+          !updatedHtml.includes('property="og:description"') ? '<meta property="og:description" content="현재 공연과 공연 예정작을 장르별로 찾고 공연기간·공연장·예매사이트를 확인하세요.">' : '',
+          !updatedHtml.includes('property="og:image"') ? '<meta property="og:image" content="https://movoka.tcflick.com/og-image.png">' : '',
+          !updatedHtml.includes('property="og:url"') ? '<meta property="og:url" content="https://movoka.tcflick.com/">' : '',
+          !updatedHtml.includes('property="og:type"') ? '<meta property="og:type" content="website">' : ''
+        ].filter(Boolean).join('\\n');
+        if (headFallback) updatedHtml = updatedHtml.replace(/<head>/i, `<head>\\n${headFallback}`);
         // 원본 HTML의 길이/압축/ETag 헤더가 변경된 HTML과 충돌하지 않도록 제거합니다.
         const headers = new Headers(assetResponse.headers);
         headers.delete('content-length');
