@@ -103,7 +103,7 @@ function sortUpcoming(items) {
   });
 }
 
-// 지난 공연을 버리고 현재/예정 공연을 수량 제한 없이 저장합니다.
+// 공연 종료일이 오늘보다 이전인 데이터는 제외하고 현재/예정 공연만 저장합니다.
 function normalize(items, today) {
   const current = uniqueById(filterCurrent(items, today), '02');
   const upcoming = sortUpcoming(uniqueById(filterUpcoming(items, today), '01'));
