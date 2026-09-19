@@ -20,8 +20,9 @@ const items = [...(data.current || []), ...(data.upcoming || [])];
 const ids = [...new Set(items.map(item => item.mt20id).filter(Boolean))];
 
 // 홈과 공연 상세 페이지를 모두 sitemap에 등록합니다.
+const staticUrls = ['/', '/terms.html', '/privacy.html', '/contact.html'];
 const urls = [
-  `  <url><loc>${BASE}/</loc></url>`,
+  ...staticUrls.map(path => `  <url><loc>${escapeXml(BASE + path)}</loc></url>`),
   ...ids.map(id => `  <url><loc>${escapeXml(BASE + '/performance/' + encodeURIComponent(id))}</loc></url>`)
 ];
 
@@ -33,4 +34,4 @@ ${urls.join('\n')}
 
 // 검색엔진이 발견할 수 있도록 최신 공연 URL 목록을 저장합니다.
 await writeFile(OUTPUT, xml, 'utf8');
-console.log(`sitemap 완료: ${ids.length}개 공연 상세 URL + 홈`);
+console.log(`sitemap 완료: ${ids.length}개 공연 상세 URL + 서비스 기본 페이지`);
