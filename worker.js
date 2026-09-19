@@ -156,7 +156,9 @@ ${detail.sty ? `<div class="cast"><strong>줄거리</strong><br>${escHtml(detail
 // KOPIS 상세 XML에서 줄거리(sty)와 소개 이미지를 읽습니다.
 function parsePerformanceDetail(xml) {
   const get = tag => xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'))?.[1]?.trim() || '';
-  return { sty: get('sty'), styurls: get('styurls') };
+  // KOPIS 응답은 CDATA를 사용할 수 있으므로 태그 내부의 HTML/CDATA를 함께 정리합니다.
+  const clean = value => String(value || '').replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim();
+  return { sty: clean(get('sty')), styurls: clean(get('styurls')) };
 }
 
 // 공연 상세 페이지에서 사용할 줄거리를 KOPIS 상세 API로 가져옵니다.
