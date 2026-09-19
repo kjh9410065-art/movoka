@@ -185,6 +185,31 @@ export default {
       });
     }
 
+    // 홈페이지 HTML에도 네이버 소유확인 태그를 강제로 삽입해 배포된 실제 페이지에서 항상 확인되도록 합니다.
+    if (url.pathname === '/') {
+      const assetResponse = await env.ASSETS.fetch(request);
+      if (assetResponse.ok && (assetResponse.headers.get('content-type') || '').includes('text/html')) {
+        const html = await assetResponse.text();
+        const verificationTag = '<meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />';
+        const updatedHtml = html.includes('name="naver-site-verification"')
+          ? html
+          : html.replace(/<head>/i, `<head>\n${verificationTag}`);
+        // 원본 HTML의 길이/압축/ETag 헤더가 변경된 HTML과 충돌하지 않도록 제거합니다.
+        const headers = new Headers(assetResponse.headers);
+        headers.delete('content-length');
+        headers.delete('content-encoding');
+        headers.delete('etag');
+        headers.set('content-type', 'text/html; charset=utf-8');
+        headers.set('cache-control', 'no-store, no-cache, must-revalidate');
+
+        return new Response(updatedHtml, {
+          status: assetResponse.status,
+          headers
+        });
+      }
+    }
+
+
     if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
 
     if (url.pathname === '/api/performances') {
@@ -238,30 +263,6 @@ export default {
         return response;
       } catch (error) {
         return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
-      }
-    }
-
-    // 홈페이지 HTML에도 네이버 소유확인 태그를 강제로 삽입해 배포된 실제 페이지에서 항상 확인되도록 합니다.
-    if (url.pathname === '/') {
-      const assetResponse = await env.ASSETS.fetch(request);
-      if (assetResponse.ok && (assetResponse.headers.get('content-type') || '').includes('text/html')) {
-        const html = await assetResponse.text();
-        const verificationTag = '<meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />';
-        const updatedHtml = html.includes('name="naver-site-verification"')
-          ? html
-          : html.replace(/<head>/i, `<head>\n${verificationTag}`);
-        // 원본 HTML의 길이/압축/ETag 헤더가 변경된 HTML과 충돌하지 않도록 제거합니다.
-        const headers = new Headers(assetResponse.headers);
-        headers.delete('content-length');
-        headers.delete('content-encoding');
-        headers.delete('etag');
-        headers.set('content-type', 'text/html; charset=utf-8');
-        headers.set('cache-control', 'no-store, no-cache, must-revalidate');
-
-        return new Response(updatedHtml, {
-          status: assetResponse.status,
-          headers
-        });
       }
     }
 
