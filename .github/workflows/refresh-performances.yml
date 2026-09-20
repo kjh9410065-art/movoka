@@ -11,13 +11,12 @@ on:
   # UTC 22:00 = 한국시간 다음날 오전 7:00입니다.
   schedule:
     - cron: '0 22 * * *'
-  # 코드 수정 직후에도 갱신 프로그램을 한 번 실행합니다.
+  # 공연 데이터 생성 로직 자체가 바뀌었을 때만 즉시 갱신합니다.
+  # 사이트 UI/Worker 수정은 배포와 데이터 갱신을 불필요하게 연쇄 실행하지 않도록 제외합니다.
   push:
     paths:
       - 'scripts/refresh-performances.mjs'
       - 'scripts/generate-sitemap.mjs'
-      - 'public/index.html'
-      - 'worker.js'
       - '.github/workflows/refresh-performances.yml'
   # 필요할 때 GitHub Actions 화면에서 수동 실행할 수 있습니다.
   workflow_dispatch:
