@@ -125,6 +125,7 @@ function renderPerformancePage(item, detail = {}) {
 <title>${title} | MOVOKA</title>
 <meta name="description" content="${description}">
 <meta name="robots" content="index,follow">
+<script type="application/ld+json">${JSON.stringify({\"@context\":\"https://schema.org\",\"@type\":\"Event\",name:item.prfnm || \"공연정보\",startDate:item.prfpdfrom || undefined,endDate:item.prfpdto || undefined,location:{\"@type\":\"Place\",name:item.fcltynm || \"공연장 정보 없음\"},image:item.poster ? [item.poster] : undefined,description:item.prfnm ? `${item.prfnm} 공연정보` : \"MOVOKA 공연정보\"})}</script>
 <link rel="canonical" href="https://movoka.tcflick.com/performance/${encodeURIComponent(item.mt20id)}">
 <meta property="og:title" content="${title} | MOVOKA">
 <meta property="og:description" content="${description}">
