@@ -2,6 +2,11 @@
 # GitHub 서버에서 실행되므로 사용자 PC가 꺼져 있어도 작동합니다.
 name: MOVOKA Daily Performance Refresh
 
+# 예약 실행과 코드 수정 실행이 동시에 돌지 않도록 한 번에 하나만 처리합니다.
+concurrency:
+  group: movoka-performance-refresh
+  cancel-in-progress: false
+
 on:
   # UTC 22:00 = 한국시간 다음날 오전 7:00입니다.
   schedule:
