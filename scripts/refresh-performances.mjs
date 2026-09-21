@@ -1,5 +1,6 @@
 // MOVOKA 일일 공연 데이터 갱신 프로그램입니다.
 // GitHub Actions 서버에서 실행되므로 사용자 PC가 켜져 있을 필요가 없습니다.
+// 공연 데이터 강제 갱신이 필요한 경우에도 이 파일 변경으로 Actions를 즉시 실행할 수 있습니다.
 
 import { mkdir, writeFile } from 'node:fs/promises';
 
