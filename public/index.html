@@ -3,6 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Google Analytics 4: MOVOKA 측정 ID를 모든 페이지에서 수집합니다. -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-7ZB1PNQ9YZ"></script>
+<script>
+  // Google Analytics 데이터 수집을 위한 전역 데이터 레이어를 초기화합니다.
+  window.dataLayer = window.dataLayer || [];
+  // gtag 호출을 Google Analytics 데이터 레이어에 전달합니다.
+  function gtag(){dataLayer.push(arguments);}
+  // 현재 페이지의 초기화 시각을 기록합니다.
+  gtag('js', new Date());
+  // MOVOKA의 GA4 측정 ID로 페이지뷰를 전송합니다.
+  gtag('config', 'G-7ZB1PNQ9YZ');
+</script>
 <meta name="description" content="현재 공연과 공연 예정작을 장르별로 찾고 공연기간·공연장·예매사이트를 확인하세요.">\n<meta name="google-site-verification" content="hAHkcvWFhoATFOdphua3yECySUCnJXT2IC9gfm0cYew" />
 <meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />
 <meta name="robots" content="index,follow">
