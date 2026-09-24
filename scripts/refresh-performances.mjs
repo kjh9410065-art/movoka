@@ -8,8 +8,10 @@ const API_BASE = process.env.MOVOKA_API_BASE || 'https://movoka.tcflick.com';
 const OUTPUT = 'public/data/performances.json';
 const ROWS = 100;
 const WINDOW_DAYS = 30;
-const MAX_LOOKBACK_DAYS = 365;
+const MAX_LOOKBACK_DAYS = 90;
 const MAX_LOOKAHEAD_DAYS = 365;
+const REQUEST_DELAY_MS = 900;
+const MAX_RETRIES = 3;
 
 // KST 기준 날짜를 YYYYMMDD 형식으로 만들고 날짜 이동도 정확히 처리합니다.
 function dateKst(offsetDays = 0) {
@@ -36,9 +38,28 @@ async function fetchWindow(start, end) {
     url.searchParams.set('stdate', start);
     url.searchParams.set('eddate', end);
 
-    const response = await fetch(url, { cache: 'no-store' });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data?.error || `공연 데이터 조회 실패: HTTP ${response.status}`);
+    let response;
+    let data;
+    let lastError;
+
+    // KOPIS Worker가 일시적으로 요청을 차단해도 바로 실패하지 않고 지연 후 재시도합니다.
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+      if (attempt > 1) await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS * attempt));
+      try {
+        response = await fetch(url, {
+          cache: 'no-store',
+          headers: { 'Accept': 'application/json', 'User-Agent': 'MOVOKA/1.0' }
+        });
+        const text = await response.text();
+        try { data = JSON.parse(text); } catch { data = null; }
+        if (response.ok && data?.ok) break;
+        lastError = new Error(data?.error || `공연 데이터 조회 실패: HTTP ${response.status}`);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (!response?.ok || !data?.ok) throw lastError || new Error('공연 데이터 조회 실패');
 
     const pageItems = data.items || [];
     items.push(...pageItems);
@@ -47,6 +68,8 @@ async function fetchWindow(start, end) {
     // 100개 미만이면 마지막 페이지이므로 다음 날짜 구간으로 넘어갑니다.
     if (pageItems.length < ROWS) break;
     page += 1;
+    // 연속 페이지 요청 사이에도 간격을 두어 KOPIS 요청 차단을 줄입니다.
+    await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
   }
 
   return items;
