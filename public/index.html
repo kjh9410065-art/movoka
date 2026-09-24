@@ -15,7 +15,8 @@
   // MOVOKA의 GA4 측정 ID로 페이지뷰를 전송합니다.
   gtag('config', 'G-7ZB1PNQ9YZ');
 </script>
-<meta name="description" content="현재 공연과 공연 예정작을 장르별로 찾고 공연기간·공연장·예매사이트를 확인하세요.">\n<meta name="google-site-verification" content="hAHkcvWFhoATFOdphua3yECySUCnJXT2IC9gfm0cYew" />
+<meta name="description" content="현재 공연과 공연 예정작을 장르별로 찾고 공연기간·공연장·예매사이트를 확인하세요.">
+<meta name="google-site-verification" content="hAHkcvWFhoATFOdphua3yECySUCnJXT2IC9gfm0cYew" />
 <meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://movoka.tcflick.com/">
@@ -225,7 +226,12 @@ function filterData(){const keyword=$('q').value.trim().toLowerCase();const filt
 async function load(){try{const response=await fetch('/data/performances.json?'+Date.now(),{cache:'no-store'});const data=await response.json();if(!response.ok||!data||!Array.isArray(data.items))throw new Error('저장된 공연 데이터가 없습니다.');window.__rawCurrent=data.current||[];window.__rawUpcoming=data.upcoming||[];$('updated').textContent=data.updatedAt?`마지막 갱신 ${new Date(data.updatedAt).toLocaleString('ko-KR')}`:'갱신 대기 중';filterData()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
 
 // 공연 상세정보는 사용자가 상세보기를 누를 때만 Worker API를 호출합니다.
-async function detail(id){const r=await fetch('/api/performance?mt20id='+encodeURIComponent(id));const text=await r.text();if(!r.ok){alert(text);return}const doc=new DOMParser().parseFromString(text,'text/xml');const get=t=>doc.querySelector(t)?.textContent||'';alert(`${get('prfnm')}\n\n${get('prfpdfrom')} ~ ${get('prfpdto')}\n${get('fcltynm')}\n\n${get('prfcast')}`)}
+async function detail(id){const r=await fetch('/api/performance?mt20id='+encodeURIComponent(id));const text=await r.text();if(!r.ok){alert(text);return}const doc=new DOMParser().parseFromString(text,'text/xml');const get=t=>doc.querySelector(t)?.textContent||'';alert(`${get('prfnm')}
+
+${get('prfpdfrom')} ~ ${get('prfpdto')}
+${get('fcltynm')}
+
+${get('prfcast')}`)}
 
 // 사이트에 처음 접속하면 공연정보 출처와 줄거리 표시 기준을 안내합니다.
 (function(){const notice=$('siteNotice');const today=new Date().toISOString().slice(0,10);if(localStorage.getItem('movoka-site-notice-date')!==today)notice.style.display='flex';$('siteNoticeClose').onclick=()=>{if($('siteNoticeToday').checked)localStorage.setItem('movoka-site-notice-date',today);notice.style.display='none';};})();
