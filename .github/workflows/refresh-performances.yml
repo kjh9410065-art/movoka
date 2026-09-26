@@ -34,6 +34,7 @@ jobs:
 
       # Node.js 20 환경을 준비합니다.
       - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 20
 
