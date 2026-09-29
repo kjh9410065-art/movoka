@@ -54,3 +54,4 @@ jobs:
           git add public/data/performances.json public/sitemap.xml
           git diff --cached --quiet || git commit -m "chore: refresh MOVOKA performance data"
           git push
+# Manual refresh trigger: 2026-09-30
