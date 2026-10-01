@@ -55,4 +55,4 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: refresh MOVOKA performance data"
           git push
 # Manual refresh trigger: 2026-09-30
-# Refresh trigger: 2026-10-01
+# Manual refresh trigger: 2026-10-02T07:10:00+09:00
