@@ -113,7 +113,7 @@ function escHtml(value) {
 // 공연 상세 페이지용 기본 템플릿을 생성합니다.
 function toSchemaDate(value) {
   // KOPIS의 YYYY.MM.DD 형식을 Schema.org에서 사용할 수 있는 ISO 날짜로 변환합니다.
-  const match = String(value || '').match(/^(\\d{4})[.\\-](\\d{2})[.\\-](\\d{2})/);
+  const match = String(value || '').match(/^(\d{4})[.\-](\d{2})[.\-](\d{2})/);
   return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
 }
 
