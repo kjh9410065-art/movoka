@@ -111,11 +111,29 @@ function escHtml(value) {
 }
 
 // 공연 상세 페이지용 기본 템플릿을 생성합니다.
+function toSchemaDate(value) {
+  // KOPIS의 YYYY.MM.DD 형식을 Schema.org에서 사용할 수 있는 ISO 날짜로 변환합니다.
+  const match = String(value || '').match(/^(\\d{4})[.\\-](\\d{2})[.\\-](\\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
+}
+
+// 공연 상세 페이지용 기본 템플릿을 생성합니다.
 function renderPerformancePage(item, detail = {}) {
   const title = escHtml(item.prfnm || '공연정보');
   const description = escHtml(`${item.prfnm || '공연'} | ${item.prfpdfrom || ''} ~ ${item.prfpdto || ''} | ${item.fcltynm || ''} - MOVOKA 공연정보`);
   const poster = item.poster ? `<meta property="og:image" content="${escHtml(item.poster)}">\n` : '';
   const status = item.prfstate === '02' ? '현재 공연' : '공연 예정';
+  const eventData = {
+    "@context":"https://schema.org",
+    "@type":"Event",
+    name:item.prfnm || "공연정보",
+    startDate:toSchemaDate(item.prfpdfrom),
+    endDate:toSchemaDate(item.prfpdto),
+    location:{"@type":"Place",name:item.fcltynm || "공연장 정보 없음"},
+    image:item.poster ? [item.poster] : undefined,
+    url:`https://movoka.tcflick.com/performance/${encodeURIComponent(item.mt20id)}`,
+    description:item.prfnm ? item.prfnm + " 공연정보" : "MOVOKA 공연정보"
+  };
 
   return `<!doctype html>
 <html lang="ko">
@@ -125,7 +143,7 @@ function renderPerformancePage(item, detail = {}) {
 <title>${title} | MOVOKA</title>
 <meta name="description" content="${description}">
 <meta name="robots" content="index,follow">
-<script type="application/ld+json">${JSON.stringify({"@context":"https://schema.org","@type":"Event",name:item.prfnm || "공연정보",startDate:item.prfpdfrom || undefined,endDate:item.prfpdto || undefined,location:{"@type":"Place",name:item.fcltynm || "공연장 정보 없음"},image:item.poster ? [item.poster] : undefined,description:item.prfnm ? item.prfnm + " 공연정보" : "MOVOKA 공연정보"})}</script>
+<script type="application/ld+json">${JSON.stringify(eventData)}</script>
 <link rel="canonical" href="https://movoka.tcflick.com/performance/${encodeURIComponent(item.mt20id)}">
 <meta property="og:title" content="${title} | MOVOKA">
 <meta property="og:description" content="${description}">
@@ -264,7 +282,7 @@ export default {
       return new Response(renderPerformancePage(item, detail), {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store, no-cache, must-revalidate'
+          'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400'
         }
       });
     }
