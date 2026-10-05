@@ -23,6 +23,7 @@ function parseList(xml) {
       fcltynm: get('fcltynm'),
       poster: get('poster'),
       genrenm: get('genrenm'),
+      prfage: get('prfage'),
       prfcast: get('prfcast'),
       prfstate: state === '공연중' ? '02' : state === '공연예정' ? '01' : state,
       area: get('area'),
