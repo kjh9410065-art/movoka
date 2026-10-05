@@ -10,8 +10,9 @@ const ROWS = 100;
 const WINDOW_DAYS = 30;
 const MAX_LOOKBACK_DAYS = 90;
 const MAX_LOOKAHEAD_DAYS = 365;
-const REQUEST_DELAY_MS = 900;
-const MAX_RETRIES = 3;
+const REQUEST_DELAY_MS = 1800;
+const WINDOW_DELAY_MS = 3000;
+const MAX_RETRIES = 5;
 
 // KST 기준 날짜를 YYYYMMDD 형식으로 만들고 날짜 이동도 정확히 처리합니다.
 function dateKst(offsetDays = 0) {
@@ -44,7 +45,7 @@ async function fetchWindow(start, end) {
 
     // KOPIS Worker가 일시적으로 요청을 차단해도 바로 실패하지 않고 지연 후 재시도합니다.
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
-      if (attempt > 1) await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS * attempt));
+      if (attempt > 1) await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS * attempt * 1.5));
       try {
         response = await fetch(url, {
           cache: 'no-store',
@@ -84,6 +85,8 @@ async function fetchWindows(startOffset, endOffset) {
     const next = Math.min(cursor + WINDOW_DAYS, endOffset);
     all.push(...await fetchWindow(dateKst(cursor), dateKst(next)));
     cursor = next;
+    // 날짜 구간을 바꿀 때도 충분히 쉬어 KOPIS의 연속 요청 제한을 피합니다.
+    if (cursor < endOffset) await new Promise(resolve => setTimeout(resolve, WINDOW_DELAY_MS));
   }
 
   return all;
