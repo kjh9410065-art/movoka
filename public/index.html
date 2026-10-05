@@ -237,7 +237,27 @@ function render(){const source=tab==='upcoming'?allUpcoming:tab==='adult'?allAdu
 function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager').innerHTML=Array.from({length:totalPages},(_,i)=>`<button class="page ${i+1===page?'active':''}" data-page="${i+1}">${i+1}</button>`).join('');$('pager').onclick=e=>{const b=e.target.closest('.page');if(!b)return;page=Number(b.dataset.page);render();scrollTo({top:0,behavior:'smooth'})}}
 
 // 장르와 검색어를 이미 받아둔 전체 데이터에 적용합니다.
-function isAdultPerformance(x){const age=String(x.prfage||'').replace(/\s+/g,'');return /성인|청소년관람불가|18세|19세|20세|21세|22세|23세|24세|25세|26세|27세|28세|29세|30세/.test(age)}
+// 공연 내용에 실제 선정성 표현이 있는지 판별합니다. 관람연령(prfage)은 이 판별에 사용하지 않습니다.
+function isAdultPerformance(x){
+  // KOPIS 목록에서 제공되는 실제 텍스트 필드를 하나로 합칩니다. 향후 설명 필드가 추가되어도 자동으로 검사합니다.
+  const text=[x.prfnm,x.genrenm,x.prfcast,x.description,x.prfdesc,x.sty,x.contents,x.content].filter(Boolean).join(' ').replace(/\\s+/g,' ').trim().toLowerCase();
+  // 공연 내용이 성인/선정적임을 직접 나타내는 명확한 표현만 성인 탭으로 분류합니다.
+  const strongPatterns=[
+    /19\\s*금/,
+    /성인\\s*(극|공연|연극|쇼|로맨스|코미디)/,
+    /에로(틱)?/,
+    /erotic/,
+    /섹시/,
+    /sexy/,
+    /관능/,
+    /노출/,
+    /야한/,
+    /야\\s*한\\s*(공연|연극|쇼)/,
+    /성적\\s*(내용|묘사|코드|표현)/,
+    /성인\\s*콘텐츠/
+  ];
+  return strongPatterns.some(pattern=>pattern.test(text));
+}
 function filterData(){const keyword=$('q').value.trim().toLowerCase();const base=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').toLowerCase().includes(keyword)));const filterNormal=list=>base(list).filter(x=>!isAdultPerformance(x));const filterAdult=list=>base(list).filter(isAdultPerformance);allCurrent=filterNormal(window.__rawCurrent||[]);allUpcoming=filterNormal(window.__rawUpcoming||[]);allAdult=filterAdult([...(window.__rawCurrent||[]),...(window.__rawUpcoming||[])]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;$('adultCount').textContent=allAdult.length;render()}
 
 // 저장된 일일 데이터 파일을 한 번만 읽습니다. 캐시된 이전 JSON을 피합니다.
