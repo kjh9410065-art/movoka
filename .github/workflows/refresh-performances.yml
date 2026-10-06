@@ -2,23 +2,18 @@
 # GitHub 서버에서 실행되므로 사용자 PC가 꺼져 있어도 작동합니다.
 name: MOVOKA Daily Performance Refresh
 
-# 예약 실행과 코드 수정 실행이 동시에 돌지 않도록 한 번에 하나만 처리합니다.
 concurrency:
   group: movoka-performance-refresh
   cancel-in-progress: false
 
 on:
-  # UTC 22:00 = 한국시간 다음날 오전 7:00입니다.
   schedule:
     - cron: '0 22 * * *'
-  # 공연 데이터 생성 로직 자체가 바뀌었을 때만 즉시 갱신합니다.
-  # 사이트 UI/Worker 수정은 배포와 데이터 갱신을 불필요하게 연쇄 실행하지 않도록 제외합니다.
   push:
     paths:
       - 'scripts/refresh-performances.mjs'
       - 'scripts/generate-sitemap.mjs'
       - '.github/workflows/refresh-performances.yml'
-  # 필요할 때 GitHub Actions 화면에서 수동 실행할 수 있습니다.
   workflow_dispatch:
 
 permissions:
@@ -28,25 +23,20 @@ jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
-      # 저장소의 최신 코드를 가져옵니다.
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Node.js 20 환경을 준비합니다.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # KOPIS Worker API에서 현재/예정 공연 데이터를 받아 JSON으로 저장합니다.
       - name: Refresh performance data
         run: node scripts/refresh-performances.mjs
 
-      # 갱신된 공연 데이터로 검색엔진용 sitemap도 다시 만듭니다.
       - name: Generate sitemap
         run: node scripts/generate-sitemap.mjs
 
-      # 변경된 공연 데이터와 sitemap만 GitHub에 커밋합니다.
       - name: Commit updated data
         run: |
           git config user.name "github-actions[bot]"
@@ -54,17 +44,16 @@ jobs:
           git add public/data/performances.json public/sitemap.xml
           git diff --cached --quiet || git commit -m "chore: refresh MOVOKA performance data"
           git push
-      
-      # 갱신된 public 폴더를 Cloudflare Workers에 즉시 배포해 실제 사이트에도 최신 데이터를 반영합니다.
+
       - name: Deploy MOVOKA to Cloudflare
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler@4.131.1 deploy --config wrangler.jsonc
 
-      # 자동/수동 갱신이 실제 배포까지 완료됐음을 Actions 로그에 남깁니다.
       - name: Refresh summary
         run: |
           node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync('public/data/performances.json','utf8')); console.log('MOVOKA refresh completed successfully'); console.log('기준일:', d.updatedAt); console.log('현재 공연:', d.current.length); console.log('공연 예정:', d.upcoming.length); console.log('전체:', d.items.length);"
 # Manual refresh trigger: 2026-09-30
 # Refresh trigger: 2026-10-06
+# Refresh trigger: 2026-10-06 manual refresh
