@@ -53,11 +53,7 @@ ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item
 /* 버튼으로만 다크모드를 전환하고 선택값을 저장합니다. */
 (function(){const key='movoka-theme';const apply=mode=>{document.body.classList.toggle('dark',mode==='dark');const b=document.getElementById('themeToggle');if(b)b.textContent=mode==='dark'?'☀️ 라이트모드':'🌙 다크모드';};apply(localStorage.getItem(key)||'light');document.getElementById('themeToggle').onclick=()=>{const next=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(key,next);apply(next);};})();
 
-/* 줄거리 버튼을 눌렀을 때만 내용을 펼칩니다. */
-function openSynopsis(){const box=document.getElementById('synopsisBox');if(!box)return;const willOpen=box.style.display==='none';box.style.display=willOpen?'block':'none';}
-
-/* 상세 페이지에서도 KOPIS 예매처를 불러옵니다. */
-async function openBookingFor(id){try{const r=await fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'});const text=await r.text();if(!r.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');const doc=new DOMParser().parseFromString(text,'text/xml');const names=Array.from(doc.querySelectorAll('relatenm')).map(x=>x.textContent.trim());const urls=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim());const links=urls.map((url,i)=>({name:names[i]||'예매사이트',url})).filter(x=>/^https?:\\/\\//.test(x.url));if(!links.length)throw new Error('등록된 외부 예매사이트가 없습니다.');document.getElementById('bookingLinks').innerHTML=links.map(x=>'<button type="button" onclick="window.open(\\''+x.url.replace(/'/g,'%27')+'\\',\\'_blank\\',\\'noopener,noreferrer\\');closeBookingList()">'+x.name.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]))+'</button>').join('');document.getElementById('bookingList').style.display='flex';}catch(e){alert(e.message||'예매사이트 정보를 불러오지 못했습니다.');}}
+/* 상세 페이지의 모달 닫기만 처리합니다. 공연정보 링크는 저장된 prfurl을 사용합니다. */
 function closeBookingList(){document.getElementById('bookingList').style.display='none';}
 </script>
 <footer style="margin-top:24px;color:#73798a;font-size:13px"><p style="margin:0 0 10px">데이터 출처: KOPIS 공연예술통합전산망</p>
