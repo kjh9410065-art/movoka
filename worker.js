@@ -64,58 +64,6 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 </main></body></html>`;
 }
 
-// KOPIS 상세 XML에서 줄거리(sty)와 소개 이미지를 읽습니다.
-function parsePerformanceDetail(xml) {
-  // KOPIS 상세 XML에서 태그 이름을 대소문자와 속성 여부에 관계없이 찾습니다.
-  const get = tag => {
-    const match = String(xml || '').match(new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)</' + tag + '>', 'i'));
-    return match?.[1]?.trim() || '';
-  };
-
-  // KOPIS가 반환하는 CDATA 표기를 정규식 없이 안전하게 제거합니다.
-  const clean = value => {
-    const text = String(value || '').trim();
-    if (text.startsWith('<![CDATA[') && text.endsWith(']]>')) {
-      return text.slice(9, -3).trim();
-    }
-    return text;
-  };
-
-  // 줄거리와 소개 이미지 목록을 반환합니다.
-  return {
-    sty: clean(get('sty')),
-    styurls: clean(get('styurls'))
-  };
-}
-
-// 공연 상세 페이지에서 사용할 줄거리를 KOPIS 상세 API로 가져옵니다.
-async function fetchPerformanceDetail(key, id) {
-  if (!key || !/^PF\\d+$/.test(id)) return { sty: '', styurls: '' };
-
-  try {
-    // KOPIS 상세 API는 공연 ID를 경로에 넣고 서비스 키를 쿼리로 전달합니다.
-    const detailUrl = new URL(KOPIS_BASE + '/' + encodeURIComponent(id));
-    detailUrl.searchParams.set('service', key);
-
-    // 상세 XML은 캐시하지 않고 최신 응답을 직접 요청합니다.
-    const response = await fetch(detailUrl.toString(), {
-      method: 'GET',
-      redirect: 'follow',
-      cache: 'no-store',
-      headers: { 'Accept': 'application/xml,text/xml,*/*' }
-    });
-
-    const xml = await response.text();
-
-    // KOPIS가 정상 XML을 반환한 경우에만 줄거리 태그를 읽습니다.
-    if (!response.ok || !/<(?:dbs|db)\\b/i.test(xml)) return { sty: '', styurls: '' };
-
-    return parsePerformanceDetail(xml);
-  } catch {
-    // 외부 API 오류가 발생해도 공연 상세 페이지는 정상 출력합니다.
-    return { sty: '', styurls: '' };
-  }
-}
 // 정적 공연 JSON에서 특정 공연을 찾아 상세 페이지를 만듭니다.
 async function findPerformance(env, id) {
   const response = await env.ASSETS.fetch(new Request('https://movoka.tcflick.com/data/performances.json'));
