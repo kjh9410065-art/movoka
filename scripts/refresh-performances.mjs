@@ -2,7 +2,7 @@
 // GitHub Actions 서버에서 실행되므로 사용자 PC가 켜져 있을 필요가 없습니다.
 // 공연 데이터 강제 갱신이 필요한 경우에도 이 파일 변경으로 Actions를 즉시 실행할 수 있습니다.
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const API_BASE = process.env.MOVOKA_API_BASE || 'https://movoka.tcflick.com';
 const OUTPUT = 'public/data/performances.json';
@@ -28,6 +28,22 @@ function dateKst(offsetDays = 0) {
 }
 
 // KOPIS 조회 결과를 페이지 끝까지 전부 가져옵니다. 공연 등록 수에는 상한을 두지 않습니다.
+
+// 같은 KST 날짜에 이미 정상 갱신된 데이터가 있으면 KOPIS API를 다시 호출하지 않습니다.
+async function alreadyRefreshedToday(today) {
+  try {
+    const existing = JSON.parse(await readFile(OUTPUT, 'utf8'));
+    const updatedAt = new Date(existing.updatedAt);
+    if (!Number.isFinite(updatedAt.getTime())) return false;
+    const existingKst = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(updatedAt).replaceAll('-', '');
+    return existingKst === today && Array.isArray(existing.items) && existing.items.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function fetchWindow(start, end) {
   const items = [];
   let page = 1;
@@ -140,6 +156,12 @@ function normalize(items, today) {
 
 // 매일 새로 조회하고 현재/예정 공연을 분리해 저장합니다.
 const today = dateKst(0);
+
+// 같은 날 재실행되면 KOPIS 호출 자체를 건너뜁니다.
+if (await alreadyRefreshedToday(today)) {
+  console.log(`이미 ${today}에 정상 갱신된 데이터가 있어 KOPIS 호출을 건너뜁니다.`);
+  process.exit(0);
+}
 const candidates = await fetchWindows(-MAX_LOOKBACK_DAYS, MAX_LOOKAHEAD_DAYS);
 const data = normalize(candidates, today);
 
