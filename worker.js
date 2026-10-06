@@ -1,5 +1,47 @@
-// MOVOKA Worker - 저장된 공연 데이터만 제공
-// KOPIS API는 GitHub Actions의 일일 갱신 작업에서만 호출합니다.
+// MOVOKA Worker - 저장된 공연 데이터 제공 및 갱신용 KOPIS 프록시
+// KOPIS 목록 API는 GitHub Actions의 일일 갱신 작업에서만 사용합니다.
+
+// KOPIS 목록 API를 GitHub Actions의 데이터 갱신 작업에 제공합니다.
+const KOPIS_BASE = 'http://www.kopis.or.kr/openApi/restful/pblprfr';
+const ROWS = 100;
+
+// KOPIS 목록 XML을 MOVOKA 공연 객체로 변환합니다.
+function parseList(xml) {
+  const matches = xml.match(/<db>[\\s\\S]*?<\\/db>/g) || [];
+  return matches.map(db => {
+    const get = tag => db.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.trim() || '';
+    const state = get('prfstate');
+    return {
+      mt20id: get('mt20id'), prfnm: get('prfnm'), prfpdfrom: get('prfpdfrom'), prfpdto: get('prfpdto'),
+      fcltynm: get('fcltynm'), poster: get('poster'), genrenm: get('genrenm'), prfage: get('prfage'),
+      prfcast: get('prfcast'), prfstate: state === '공연중' ? '02' : state === '공연예정' ? '01' : state,
+      area: get('area'), prfurl: get('prfurl')
+    };
+  }).filter(x => x.mt20id);
+}
+
+// KOPIS XML 응답을 검증하고 반환합니다.
+async function callKopis(url) {
+  const response = await fetch(url.toString(), { redirect: 'follow' });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`KOPIS HTTP ${response.status}: ${text.slice(0, 300)}`);
+  if (!text.includes('<dbs') && !text.includes('<db>')) throw new Error(`KOPIS 응답 형식 오류: ${text.slice(0, 300)}`);
+  return text;
+}
+
+// 요청받은 날짜와 페이지를 KOPIS 목록 API URL로 변환합니다.
+function makeListUrl(requestUrl, key, page, rows) {
+  const target = new URL(KOPIS_BASE);
+  target.searchParams.set('service', key);
+  target.searchParams.set('stdate', requestUrl.searchParams.get('stdate') || '');
+  target.searchParams.set('eddate', requestUrl.searchParams.get('eddate') || '');
+  target.searchParams.set('cpage', String(page));
+  target.searchParams.set('rows', String(rows));
+  target.searchParams.set('sharea', requestUrl.searchParams.get('sharea') || '');
+  target.searchParams.set('shcate', requestUrl.searchParams.get('shcate') || '');
+  return target;
+}
+
 
 function renderPerformancePage(item, detail = {}) {
   const title = escHtml(item.prfnm || '공연정보');
@@ -136,6 +178,19 @@ export default {
         headers.set('content-type', 'text/html; charset=utf-8');
         headers.set('cache-control', 'no-store, no-cache, must-revalidate');
         return new Response(updatedHtml, { status: assetResponse.status, headers });
+      }
+    }
+
+    // GitHub Actions의 일일 데이터 갱신이 사용하는 KOPIS 목록 프록시입니다.
+    if (url.pathname === '/api/performances') {
+      if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
+      const page = Number(url.searchParams.get('page') || url.searchParams.get('cpage') || 1);
+      const rows = Number(url.searchParams.get('rows') || ROWS);
+      try {
+        const xml = await callKopis(makeListUrl(url, key, page, rows));
+        return Response.json({ ok: true, items: parseList(xml) }, { headers: { 'Cache-Control': 'no-store' } });
+      } catch (error) {
+        return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
       }
     }
 
