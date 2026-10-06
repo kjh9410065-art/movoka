@@ -14,6 +14,7 @@ on:
       - 'scripts/refresh-performances.mjs'
       - 'scripts/generate-sitemap.mjs'
       - '.github/workflows/refresh-performances.yml'
+      - 'worker.js'
   workflow_dispatch:
 
 permissions:
