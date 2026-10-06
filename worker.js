@@ -202,3 +202,4 @@ export default {
     console.log(`MOVOKA daily refresh: ${new Date().toISOString()}`);
   }
 };
+// Cloudflare production rebuild trigger: 2026-10-07
