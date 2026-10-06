@@ -62,7 +62,7 @@
 </div>
 <div class="data-note"><strong>MOVOKA가 제공하는 정보의 범위</strong><span>공연정보는 KOPIS 등록 내용과 갱신 상태에 따라 달라질 수 있습니다. 예매 가능 여부와 좌석·가격 등 최종 판매 정보는 연결된 공식 예매처에서 확인하세요.</span></div>
 </section>
-<div class="tabs"><button class="tab active" data-tab="current">현재 공연 <span id="currentCount">0</span></button><button class="tab" data-tab="upcoming">공연 예정 <span id="upcomingCount">0</span></button><button class="tab" data-tab="adult">성인 <span id="adultCount">0</span></button></div>
+<div class="tabs"><button class="tab active" data-tab="current">현재 공연 <span id="currentCount">0</span></button><button class="tab" data-tab="upcoming">공연 예정 <span id="upcomingCount">0</span></button></div>
 <div class="chips" id="chips"></div>
 <div class="bar"><strong id="count">공연 정보를 불러오는 중...</strong><span id="updated">데이터 갱신 확인 중</span></div>
 <section class="grid" id="grid"><div class="empty">공연 정보를 불러오는 중입니다.</div></section>
@@ -105,7 +105,7 @@
 
 // MOVOKA에서 사용할 장르 목록입니다.
 const categories=[['','전체'],['AAAA','연극'],['GGGA','뮤지컬'],['CCCA','서양음악(클래식)'],['CCCC','한국음악(국악)'],['CCCD','대중음악'],['BBBC','무용'],['KID','아동']];
-let active='',tab='current',allCurrent=[],allUpcoming=[],allAdult=[],page=1,totalPages=1;
+let active='',tab='current',allCurrent=[],allUpcoming=[],page=1,totalPages=1;
 const PAGE_SIZE=28;
 const $=id=>document.getElementById(id);
 
@@ -223,57 +223,14 @@ async function openBookingFor(id){
 function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><a class="detail-link" href="/performance/${esc(x.mt20id)}">상세보기</a><button class="booking" onmouseenter="prefetchBooking('${esc(x.mt20id)}')" onclick="openBookingFor('${esc(x.mt20id)}')">예매사이트</button></div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
-function render(){const source=tab==='upcoming'?allUpcoming:tab==='adult'?allAdult:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>'; $('count').textContent=tab==='upcoming'?`공연 예정 ${source.length}개`:tab==='adult'?`성인 공연 ${source.length}개`:`현재 공연 ${source.length}개`;renderPager()}
+function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>';$('count').textContent=tab==='upcoming'?'공연 예정 '+source.length+'개':'현재 공연 '+source.length+'개';renderPager()}
 
 // 페이지 이동은 서버나 KOPIS를 다시 호출하지 않고 메모리에 받은 데이터를 사용합니다.
 function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager').innerHTML=Array.from({length:totalPages},(_,i)=>`<button class="page ${i+1===page?'active':''}" data-page="${i+1}">${i+1}</button>`).join('');$('pager').onclick=e=>{const b=e.target.closest('.page');if(!b)return;page=Number(b.dataset.page);render();scrollTo({top:0,behavior:'smooth'})}}
 
 // 장르와 검색어를 이미 받아둔 전체 데이터에 적용합니다.
 // 공연 내용 자체가 선정적이거나 명백한 성인 대상임을 판별합니다. 관람연령(prfage)은 판별 기준으로 사용하지 않습니다.
-function isAdultPerformance(x){
-  // 공연 제목과 KOPIS가 제공하는 텍스트 필드를 합쳐 선정적인 공연을 판별합니다.
-  const rawText=[x.prfnm,x.genrenm,x.prfcast,x.description,x.prfdesc,x.sty,x.contents,x.content].filter(Boolean).join(' ');
-  const text=rawText.replace(/\s+/g,' ').trim().toLowerCase();
-  const normalized=text.replace(/[^0-9a-z가-힣\s]/gi,'').replace(/\s+/g,' ');
-
-  // 공연 내용이 성인·선정적임을 직접 나타내는 명확한 표현입니다.
-  const explicitPatterns=[
-    /19\s*금/,
-    /성인\s*(극|공연|연극|쇼|로맨스|코미디|콘텐츠)/,
-    /에로(틱)?/,
-    /erotic/,
-    /섹시/,
-    /sexy/,
-    /관능/,
-    /노출/,
-    /야한/,
-    /야\s*한\s*(공연|연극|쇼)/,
-    /성적\s*(내용|묘사|코드|표현)/,
-    /women\s*only/,
-    /adult\s*(show|performance|theater|theatre|content)/,
-
-
-
-
-
-
-    /25\s*\+/
-  ];
-
-  // 제목 자체가 특정 성인 공연임을 명확히 나타내는 표현입니다.
-  const title=String(x.prfnm||'').toLowerCase().replace(/\s+/g,' ').trim();
-  const titleNormalized=title.replace(/[^0-9a-z가-힣\s]/gi,'').replace(/\s+/g,' ');
-  const adultTitlePatterns=[
-    /too\s*hot\s*show/,
-    /투핫쇼/,
-    /투\s*핫\s*쇼/
-  ];
-
-  if(explicitPatterns.some(pattern=>pattern.test(text)||pattern.test(normalized))) return true;
-  return adultTitlePatterns.some(pattern=>pattern.test(title)||pattern.test(titleNormalized));
-}
-
-function filterData(){const keyword=$('q').value.trim().toLowerCase();const base=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').toLowerCase().includes(keyword)));const filterNormal=list=>base(list).filter(x=>!isAdultPerformance(x));const filterAdult=list=>base(list).filter(isAdultPerformance);allCurrent=filterNormal(window.__rawCurrent||[]);allUpcoming=filterNormal(window.__rawUpcoming||[]);allAdult=filterAdult([...(window.__rawCurrent||[]),...(window.__rawUpcoming||[])]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;$('adultCount').textContent=allAdult.length;render()}
+function filterData(){const keyword=$('q').value.trim().toLowerCase();const base=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').toLowerCase().includes(keyword)));allCurrent=base(window.__rawCurrent||[]);allUpcoming=base(window.__rawUpcoming||[]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}
 
 // 저장된 일일 데이터 파일을 한 번만 읽습니다. 캐시된 이전 JSON을 피합니다.
 async function load(){try{const response=await fetch('/data/performances.json?'+Date.now(),{cache:'no-store'});const data=await response.json();if(!response.ok||!data||!Array.isArray(data.items))throw new Error('저장된 공연 데이터가 없습니다.');window.__rawCurrent=data.current||[];window.__rawUpcoming=data.upcoming||[];$('updated').textContent=data.updatedAt?`마지막 갱신 ${new Date(data.updatedAt).toLocaleString('ko-KR')}`:'갱신 대기 중';filterData()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
