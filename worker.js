@@ -46,7 +46,7 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 <strong>지역</strong><br>${escHtml(item.area || '정보 없음')}<br>\n<strong>장르</strong><br>${escHtml(item.genrenm || '정보 없음')}
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}\n<div class="source-box" style="margin-top:20px;padding:14px;border-radius:12px;background:#f7f7fa;color:#666;font-size:13px;line-height:1.7"><strong>공연정보 출처</strong><br>KOPIS 공연예술통합전산망에서 제공하는 공연 등록 정보를 표시합니다.<br>공연 일정·장소·출연진·예매 가능 여부는 변경될 수 있으므로 최종 정보는 예매처에서 확인하세요.</div>
-<div class="detail-actions">${detail.sty ? '<button class="action-btn primary" type="button" onclick="openSynopsis()">줄거리</button>' : ''}<button class="action-btn primary" type="button" onclick="openBookingFor(\'${escHtml(item.mt20id)}\')">예매사이트</button><a class="action-btn" href="/">다른 공연 찾아보기</a></div>\n${detail.sty ? '<div class="synopsis-box" id="synopsisBox" style="display:none"><strong>줄거리</strong><div id="synopsisText" style="margin-top:10px;line-height:1.8">${escHtml(detail.sty).replace(/\\n/g, '<br>')}</div><div style="margin-top:12px;font-size:12px;color:#73798a">줄거리 출처: KOPIS 공연예술통합전산망</div></div>' : ''}\n</article>
+<div class="detail-actions">${item.prfurl ? '<a class="action-btn primary" href="'+escHtml(item.prfurl)+'" target="_blank" rel="noopener noreferrer">예매사이트</a>' : ''}<a class="action-btn" href="/">다른 공연 찾아보기</a></div>\n</article>
 
 <div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()"><div class="booking-box"><h3>예매사이트 선택</h3><div class="booking-links" id="bookingLinks"></div><button class="booking-close" onclick="closeBookingList()">닫기</button></div></div>
 <script>
