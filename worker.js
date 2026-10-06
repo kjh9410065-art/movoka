@@ -274,13 +274,12 @@ export default {
     }
 
 
-    // 공연 상세 URL은 검색엔진이 직접 읽을 수 있는 HTML 페이지로 제공합니다.
-    const performanceMatch = url.pathname.match(/^\/performance\/(PF\d+)\/?$/);
+    // 공연 상세 URL은 저장된 performances.json만 사용해 HTML을 제공합니다.
+    const performanceMatch = url.pathname.match(/^\\/performance\\/(PF\\d+)\\/?$/);
     if (performanceMatch) {
       const item = await findPerformance(env, performanceMatch[1]);
       if (!item) return new Response('공연 정보를 찾을 수 없습니다.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-      const detail = await fetchPerformanceDetail(key, performanceMatch[1]);
-      return new Response(renderPerformancePage(item, detail), {
+      return new Response(renderPerformancePage(item), {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400'
@@ -288,7 +287,7 @@ export default {
       });
     }
 
-    // 홈페이지 HTML에도 네이버 소유확인 태그를 강제로 삽입해 배포된 실제 페이지에서 항상 확인되도록 합니다.
+    // 홈페이지 HTML에도 네이버 소유확인 태그를 강제로 삽입합니다.
     if (url.pathname === '/') {
       const assetResponse = await env.ASSETS.fetch(request);
       if (assetResponse.ok && (assetResponse.headers.get('content-type') || '').includes('text/html')) {
@@ -298,84 +297,23 @@ export default {
         const headFallback = [
           !updatedHtml.includes('name="naver-site-verification"') ? verificationTag : '',
           !updatedHtml.includes('property="og:title"') ? '<meta property="og:title" content="MOVOKA · 모보카 | 공연정보와 예매사이트">' : '',
-          !updatedHtml.includes('property="og:description"') ? '<meta property="og:description" content="현재 공연과 공연 예정작을 장르별로 찾고 공연기간·공연장·예매사이트를 확인하세요.">' : '',
+          !updatedHtml.includes('property="og:description"') ? '<meta property="og:description" content="현재 공연과 공연 예정작을 찾고 공연기간·공연장·예매사이트를 확인하세요.">' : '',
           !updatedHtml.includes('property="og:image"') ? '<meta property="og:image" content="https://movoka.tcflick.com/og-image.png">' : '',
           !updatedHtml.includes('property="og:url"') ? '<meta property="og:url" content="https://movoka.tcflick.com/">' : '',
           !updatedHtml.includes('property="og:type"') ? '<meta property="og:type" content="website">' : ''
         ].filter(Boolean).join('\\n');
         if (headFallback) updatedHtml = updatedHtml.replace(/<head>/i, `<head>\\n${headFallback}`);
-        // 원본 HTML의 길이/압축/ETag 헤더가 변경된 HTML과 충돌하지 않도록 제거합니다.
         const headers = new Headers(assetResponse.headers);
         headers.delete('content-length');
         headers.delete('content-encoding');
         headers.delete('etag');
         headers.set('content-type', 'text/html; charset=utf-8');
         headers.set('cache-control', 'no-store, no-cache, must-revalidate');
-
-        return new Response(updatedHtml, {
-          status: assetResponse.status,
-          headers
-        });
+        return new Response(updatedHtml, { status: assetResponse.status, headers });
       }
     }
 
-
-    if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
-
-    if (url.pathname === '/api/performances') {
-      const page = Number(url.searchParams.get('page') || url.searchParams.get('cpage') || 1);
-      const rows = Number(url.searchParams.get('rows') || ROWS);
-      const target = makeListUrl(url, key, page, rows);
-
-      try {
-        const xml = await callKopis(target);
-        return Response.json({ ok: true, items: parseList(xml) }, {
-          headers: { 'Cache-Control': 'public, max-age=300' }
-        });
-      } catch (error) {
-        return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
-      }
-    }
-
-    if (url.pathname === '/api/test') {
-      try {
-        const target = new URL(KOPIS_BASE + '/PF0000000000');
-        target.searchParams.set('service', key);
-        const response = await fetch(target);
-        return new Response(await response.text(), { status: response.status, headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
-      } catch (error) {
-        return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
-      }
-    }
-
-    if (url.pathname === '/api/performance') {
-      const id = url.searchParams.get('mt20id') || '';
-      if (!/^PF\d+$/.test(id)) return Response.json({ ok: false, error: '잘못된 공연 ID입니다.' }, { status: 400 });
-
-      // 같은 공연의 상세 예매정보는 Cloudflare와 브라우저 양쪽에서 캐시할 수 있게 합니다.
-      const cache = caches.default;
-      const cacheKey = new Request(url.toString(), request);
-      const cached = await cache.match(cacheKey);
-      if (cached) return cached;
-
-      try {
-        const detailUrl = new URL(KOPIS_BASE + '/' + id);
-        detailUrl.searchParams.set('service', key);
-        const xml = await callKopis(detailUrl);
-        const cleaned = await cleanBookingSites(xml);
-        const response = new Response(cleaned, {
-          headers: {
-            'Content-Type': 'application/xml; charset=utf-8',
-            'Cache-Control': 'public, max-age=1800'
-          }
-        });
-        await cache.put(cacheKey, response.clone());
-        return response;
-      } catch (error) {
-        return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
-      }
-    }
-
+    // 공연 목록과 검색은 저장된 JSON만 사용합니다.
     return env.ASSETS.fetch(request);
   },
 
