@@ -203,32 +203,23 @@ function showBookingList(entries){
 // 예매처 선택 팝업을 닫습니다.
 function closeBookingList(){$('bookingList').style.display='none'}
 
-// KOPIS 상세정보에서 예매처 이름과 URL을 함께 읽고 잘못된 링크와 중복을 제거합니다.
-// 예매정보 요청을 미리 시작해 첫 클릭 지연을 줄입니다.
+// 저장된 공연 데이터에 포함된 공식 공연정보 링크만 사용합니다.
 const bookingRequests=new Map();
 
 function prefetchBooking(id){
-  if(bookingRequests.has(id))return bookingRequests.get(id);
-  const request=fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'})
-    .then(response=>response.text().then(text=>({ok:response.ok,text})))
-    .catch(()=>null);
-  bookingRequests.set(id,request);
-  return request;
+  return Promise.resolve(null);
 }
 
 async function openBookingFor(id){
-  try{
-    const result=await prefetchBooking(id);
-    if(!result||!result.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');
-    const doc=new DOMParser().parseFromString(result.text,'text/xml');
-    const names=Array.from(doc.querySelectorAll('relatenm')).map(x=>x.textContent.trim());
-    const urls=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim());
-    const entries=urls.map((url,index)=>({name:names[index]||'',url}));
-    showBookingList(entries);
-  }catch(error){alert(error.message||'예매사이트 정보를 불러오지 못했습니다.')}
+  const item=[...(window.__rawCurrent||[]),...(window.__rawUpcoming||[])].find(x=>x.mt20id===id);
+  if(item?.prfurl){
+    window.open(item.prfurl,'_blank','noopener,noreferrer');
+    return;
+  }
+  alert('등록된 공연정보 링크가 없습니다.');
 }
 
-// 공연 카드에는 '예매사이트' 버튼을 표시합니다.
+// 공연 카드에는 기존 버튼 UI를 유지하되 저장된 공식 공연정보 링크를 엽니다.
 function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><a class="detail-link" href="/performance/${esc(x.mt20id)}">상세보기</a><button class="booking" onmouseenter="prefetchBooking('${esc(x.mt20id)}')" onclick="openBookingFor('${esc(x.mt20id)}')">예매사이트</button></div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
