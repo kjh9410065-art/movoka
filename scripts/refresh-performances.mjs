@@ -143,6 +143,11 @@ const today = dateKst(0);
 const candidates = await fetchWindows(-MAX_LOOKBACK_DAYS, MAX_LOOKAHEAD_DAYS);
 const data = normalize(candidates, today);
 
+// KOPIS가 비정상적으로 빈 결과를 반환하면 기존 정상 데이터를 보호하기 위해 저장을 중단합니다.
+if (candidates.length === 0 || data.items.length === 0) {
+  throw new Error('공연 데이터가 0건이라 기존 데이터를 보호하기 위해 갱신을 중단합니다.');
+}
+
 // 최종 결과 JSON을 정적 파일로 저장합니다.
 await mkdir('public/data', { recursive: true });
 await writeFile(OUTPUT, JSON.stringify(data), 'utf8');
