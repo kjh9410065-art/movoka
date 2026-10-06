@@ -54,5 +54,17 @@ jobs:
           git add public/data/performances.json public/sitemap.xml
           git diff --cached --quiet || git commit -m "chore: refresh MOVOKA performance data"
           git push
+      
+      # 갱신된 public 폴더를 Cloudflare Workers에 즉시 배포해 실제 사이트에도 최신 데이터를 반영합니다.
+      - name: Deploy MOVOKA to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler@4.131.1 deploy --config wrangler.jsonc
+
+      # 자동/수동 갱신이 실제 배포까지 완료됐음을 Actions 로그에 남깁니다.
+      - name: Refresh summary
+        run: |
+          node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync('public/data/performances.json','utf8')); console.log('MOVOKA refresh completed successfully'); console.log('기준일:', d.updatedAt); console.log('현재 공연:', d.current.length); console.log('공연 예정:', d.upcoming.length); console.log('전체:', d.items.length);"
 # Manual refresh trigger: 2026-09-30
 # Refresh trigger: 2026-10-06
