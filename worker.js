@@ -101,7 +101,7 @@ export default {
 
 
     // 공연 상세 URL은 저장된 performances.json만 사용해 HTML을 제공합니다.
-    const performanceMatch = url.pathname.match(/^\\/performance\\/(PF\\d+)\\/?$/);
+    const performanceMatch = url.pathname.match(/^\/performance\/(PF\d+)\/?$/);
     if (performanceMatch) {
       const item = await findPerformance(env, performanceMatch[1]);
       if (!item) return new Response('공연 정보를 찾을 수 없습니다.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
