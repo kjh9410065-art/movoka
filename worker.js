@@ -7,7 +7,7 @@ const ROWS = 100;
 
 // KOPIS 목록 XML을 MOVOKA 공연 객체로 변환합니다.
 function parseList(xml) {
-  const matches = xml.match(/<db>[\\s\\S]*?<\\/db>/g) || [];
+  const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
   return matches.map(db => {
     const get = tag => db.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.trim() || '';
     const state = get('prfstate');
