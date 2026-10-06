@@ -107,9 +107,17 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 }
 
 // 정적 공연 JSON에서 특정 공연을 찾아 상세 페이지를 만듭니다.
-async function findPerformance(env, id) {
-  const response = await env.ASSETS.fetch(new Request('https://movoka.tcflick.com/data/performances.json'));
+async function findPerformance(env, id, requestUrl) {
+  // 현재 요청의 호스트를 사용해 Assets 바인딩에서 정적 JSON을 직접 읽습니다.
+  // Worker 자신의 공개 URL을 하드코딩하지 않아 상세 페이지 요청이 Worker로 재진입하는 문제를 피합니다.
+  const dataUrl = new URL('/data/performances.json', requestUrl);
+  const response = await env.ASSETS.fetch(new Request(dataUrl.toString(), {
+    method: 'GET',
+    headers: { 'Accept': 'application/json' }
+  }));
   if (!response.ok) return null;
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) return null;
   const data = await response.json();
   return [...(data.current || []), ...(data.upcoming || [])].find(item => item.mt20id === id) || null;
 }
@@ -145,7 +153,7 @@ export default {
     // 공연 상세 URL은 저장된 performances.json만 사용해 HTML을 제공합니다.
     const performanceMatch = url.pathname.match(/^\/performance\/(PF\d+)\/?$/);
     if (performanceMatch) {
-      const item = await findPerformance(env, performanceMatch[1]);
+      const item = await findPerformance(env, performanceMatch[1], url);
       if (!item) return new Response('공연 정보를 찾을 수 없습니다.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
       return new Response(renderPerformancePage(item), {
         headers: {
