@@ -45,8 +45,8 @@ function makeListUrl(requestUrl, key, page, rows) {
 
 // KOPIS 날짜 문자열을 Schema.org가 이해할 수 있는 날짜 형식으로 변환합니다.
 function toSchemaDate(value) {
-  const text = String(value || '').trim().replace(/\\./g, '-').replace(/\\//g, '-');
-  const match = text.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  const text = String(value || '').trim().replace(/\./g, '-').replace(/\//g, '-');
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
 }
 
@@ -118,7 +118,7 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 // KOPIS 상세 XML에서 줄거리와 실제 예매처 정보를 추출합니다.
 function parsePerformanceDetail(xml) {
   const get = tag => xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'))?.[1]?.trim() || '';
-  const clean = value => String(value || '').replace(/^<!\\[CDATA\\[/, '').replace(/\\]\\]>$/, '').trim();
+  const clean = value => String(value || '').replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim();
   const block = xml.match(/<relates>[\s\S]*?<\/relates>/)?.[0] || '';
   const sites = [];
   const seen = new Set();
@@ -129,7 +129,7 @@ function parsePerformanceDetail(xml) {
       const url = new URL(clean(match[2]));
       if (!/^https?:$/.test(url.protocol)) continue;
       url.hash = '';
-      const host = url.hostname.replace(/^www\\./, '').toLowerCase();
+      const host = url.hostname.replace(/^www\./, '').toLowerCase();
       if (!host || seen.has(host)) continue;
       seen.add(host);
       sites.push({ name: name || '예매사이트', url: url.href });
@@ -215,7 +215,7 @@ export default {
     // 공연 카드에서 요청한 경우에만 KOPIS 상세 API를 호출해 실제 예매처 정보를 반환합니다.
     if (url.pathname === '/api/performance') {
       const id = url.searchParams.get('mt20id') || '';
-      if (!/^PF\\d+$/.test(id)) return Response.json({ ok: false, error: '잘못된 공연 ID입니다.' }, { status: 400 });
+      if (!/^PF\d+$/.test(id)) return Response.json({ ok: false, error: '잘못된 공연 ID입니다.' }, { status: 400 });
       if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
       const cache = caches.default;
       const cacheKey = new Request(url.toString(), request);
