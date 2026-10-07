@@ -119,10 +119,10 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 function parsePerformanceDetail(xml) {
   const get = tag => xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'))?.[1]?.trim() || '';
   const clean = value => String(value || '').replace(/^<!\\[CDATA\\[/, '').replace(/\\]\\]>$/, '').trim();
-  const block = xml.match(/<relates>[\\s\\S]*?<\\/relates>/)?.[0] || '';
+  const block = xml.match(/<relates>[\s\S]*?<\/relates>/)?.[0] || '';
   const sites = [];
   const seen = new Set();
-  const pairRegex = /<relatenm>([\\s\\S]*?)<\\/relatenm>[\\s\\S]*?<relateurl>([\\s\\S]*?)<\\/relateurl>/g;
+  const pairRegex = /<relatenm>([\s\S]*?)<\/relatenm>[\s\S]*?<relateurl>([\s\S]*?)<\/relateurl>/g;
   for (const match of block.matchAll(pairRegex)) {
     const name = clean(match[1]);
     try {
