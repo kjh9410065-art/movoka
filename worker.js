@@ -2,7 +2,7 @@
 // KOPIS 목록 API는 GitHub Actions의 일일 갱신 작업에서만 사용합니다.
 
 // KOPIS 목록 API를 GitHub Actions의 데이터 갱신 작업에 제공합니다.
-const KOPIS_BASE = 'http://www.kopis.or.kr/openApi/restful/pblprfr';
+const KOPIS_BASE = 'https://www.kopis.or.kr/openApi/restful/pblprfr';
 const ROWS = 100;
 
 // KOPIS 목록 XML을 MOVOKA 공연 객체로 변환합니다.
@@ -42,6 +42,13 @@ function makeListUrl(requestUrl, key, page, rows) {
   return target;
 }
 
+
+// KOPIS 날짜 문자열을 Schema.org가 이해할 수 있는 날짜 형식으로 변환합니다.
+function toSchemaDate(value) {
+  const text = String(value || '').trim().replace(/\\./g, '-').replace(/\\//g, '-');
+  const match = text.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : undefined;
+}
 
 function renderPerformancePage(item, detail = {}) {
   const title = escHtml(item.prfnm || '공연정보');
