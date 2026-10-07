@@ -209,8 +209,14 @@ const bookingRequests=new Map();
 function prefetchBooking(id){
   if(bookingRequests.has(id))return bookingRequests.get(id);
   const request=fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'})
-    .then(response=>response.text().then(text=>({ok:response.ok,text})))
-    .catch(()=>null);
+    .then(response=>response.text().then(text=>{
+      if(!response.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');
+      return {ok:true,text};
+    }))
+    .catch(error=>{
+      bookingRequests.delete(id);
+      throw error;
+    });
   bookingRequests.set(id,request);
   return request;
 }
