@@ -122,6 +122,7 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 
 // KOPIS 상세 XML에서 줄거리와 실제 예매처 정보를 추출합니다.
 function parsePerformanceDetail(xml) {
+  // KOPIS 상세 XML의 공통 필드를 한 번만 추출해 상세 페이지와 예매 API가 함께 사용합니다.
   const get = tag => xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'))?.[1]?.trim() || '';
   const clean = value => String(value || '').replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim();
   const block = xml.match(/<relates>[\s\S]*?<\/relates>/)?.[0] || '';
@@ -140,7 +141,22 @@ function parsePerformanceDetail(xml) {
       sites.push({ name: name || '예매사이트', url: url.href });
     } catch {}
   }
-  return { sty: clean(get('sty')), styurls: clean(get('styurls')), bookingSites: sites };
+  // 상세 페이지가 최신 공연을 직접 표시할 수 있도록 KOPIS 기본 정보도 함께 반환합니다.
+  return {
+    mt20id: clean(get('mt20id')),
+    prfnm: clean(get('prfnm')),
+    prfpdfrom: clean(get('prfpdfrom')),
+    prfpdto: clean(get('prfpdto')),
+    fcltynm: clean(get('fcltynm')),
+    poster: clean(get('poster')),
+    genrenm: clean(get('genrenm')),
+    prfcast: clean(get('prfcast')),
+    area: clean(get('area')),
+    prfurl: clean(get('prfurl')),
+    sty: clean(get('sty')),
+    styurls: clean(get('styurls')),
+    bookingSites: sites
+  };
 }
 
 // 상세 페이지와 예매사이트 클릭 시에만 KOPIS 상세 API를 호출합니다.
@@ -171,7 +187,23 @@ async function findPerformance(env, id, requestUrl) {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) return null;
   const data = await response.json();
-  return [...(data.current || []), ...(data.upcoming || [])].find(item => item.mt20id === id) || null;
+  const stored = [...(data.current || []), ...(data.upcoming || [])].find(item => item.mt20id === id);
+  if (stored) return stored;
+
+  // 일일 저장 데이터에서 빠진 공연도 상세 URL이 깨지지 않도록 KOPIS에서 직접 보완합니다.
+  if (!env.KOPIS_API_KEY) return null;
+  try {
+    const detailUrl = new URL(KOPIS_BASE + '/' + id);
+    detailUrl.searchParams.set('service', env.KOPIS_API_KEY);
+    const detailResponse = await fetch(detailUrl.toString(), { redirect: 'follow' });
+    const xml = await detailResponse.text();
+    if (!detailResponse.ok || !xml.includes('<db>')) return null;
+    const detail = parsePerformanceDetail(xml);
+    if (!detail.mt20id) return null;
+    return detail;
+  } catch {
+    return null;
+  }
 }
 
 export default {
