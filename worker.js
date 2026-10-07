@@ -232,9 +232,13 @@ export default {
         const response = await fetch(detailUrl.toString(), { redirect: 'follow' });
         const xml = await response.text();
         if (!response.ok || !xml.includes('<db>')) throw new Error('KOPIS 상세 응답 오류');
+        // KOPIS 상세 XML은 Worker에서 한 번만 파싱하고 프런트에는 안정적인 JSON으로 전달합니다.
         const parsed = parsePerformanceDetail(xml);
-        const body = '<db><relates>' + parsed.bookingSites.map(site => '<relatenm>' + escHtml(site.name) + '</relatenm><relateurl>' + escHtml(site.url) + '</relateurl>').join('') + '</relates></db>';
-        const result = new Response(body, { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=1800' } });
+        const result = Response.json(
+          { ok: true, bookingSites: parsed.bookingSites },
+          { headers: { 'Cache-Control': 'public, max-age=1800' } }
+        );
+        // 같은 공연의 반복 요청은 Cloudflare Cache에서 바로 반환합니다.
         await cache.put(cacheKey, result.clone());
         return result;
       } catch (error) {
