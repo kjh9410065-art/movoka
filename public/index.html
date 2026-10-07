@@ -203,20 +203,28 @@ function showBookingList(entries){
 // 예매처 선택 팝업을 닫습니다.
 function closeBookingList(){$('bookingList').style.display='none'}
 
-// 저장된 공연 데이터에 포함된 공식 공연정보 링크만 사용합니다.
+// KOPIS 상세정보에서 실제 예매처 정보를 가져옵니다.
 const bookingRequests=new Map();
 
 function prefetchBooking(id){
-  return Promise.resolve(null);
+  if(bookingRequests.has(id))return bookingRequests.get(id);
+  const request=fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'})
+    .then(response=>response.text().then(text=>({ok:response.ok,text})))
+    .catch(()=>null);
+  bookingRequests.set(id,request);
+  return request;
 }
 
 async function openBookingFor(id){
-  const item=[...(window.__rawCurrent||[]),...(window.__rawUpcoming||[])].find(x=>x.mt20id===id);
-  if(item?.prfurl){
-    window.open(item.prfurl,'_blank','noopener,noreferrer');
-    return;
-  }
-  alert('등록된 공연정보 링크가 없습니다.');
+  try{
+    const result=await prefetchBooking(id);
+    if(!result||!result.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');
+    const doc=new DOMParser().parseFromString(result.text,'text/xml');
+    const names=Array.from(doc.querySelectorAll('relatenm')).map(x=>x.textContent.trim());
+    const urls=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim());
+    const entries=urls.map((url,index)=>({name:names[index]||'',url}));
+    showBookingList(entries);
+  }catch(error){alert(error.message||'예매사이트 정보를 불러오지 못했습니다.')}
 }
 
 // 공연 카드에는 기존 버튼 UI를 유지하되 저장된 공식 공연정보 링크를 엽니다.
