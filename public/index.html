@@ -208,7 +208,8 @@ const bookingRequests=new Map();
 
 function prefetchBooking(id){
   if(bookingRequests.has(id))return bookingRequests.get(id);
-  const request=fetch('/api/performance?mt20id='+encodeURIComponent(id),{cache:'force-cache'})
+  // API 응답 형식을 고정하고 이전 XML 캐시와 새 JSON 캐시가 충돌하지 않도록 버전을 붙입니다.
+  const request=fetch('/api/performance?mt20id='+encodeURIComponent(id)+'&v=2',{cache:'no-store'})
     .then(response=>response.text().then(text=>{
       if(!response.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');
       return {ok:true,text};
@@ -223,14 +224,16 @@ function prefetchBooking(id){
 
 async function openBookingFor(id){
   try{
+    // Worker가 반환한 JSON에서 실제 KOPIS 예매처 목록만 사용합니다.
     const result=await prefetchBooking(id);
     if(!result||!result.ok)throw new Error('예매사이트 정보를 불러오지 못했습니다.');
-    const doc=new DOMParser().parseFromString(result.text,'text/xml');
-    const names=Array.from(doc.querySelectorAll('relatenm')).map(x=>x.textContent.trim());
-    const urls=Array.from(doc.querySelectorAll('relateurl')).map(x=>x.textContent.trim());
-    const entries=urls.map((url,index)=>({name:names[index]||'',url}));
-    showBookingList(entries);
-  }catch(error){alert(error.message||'예매사이트 정보를 불러오지 못했습니다.')}
+    const data=JSON.parse(result.text);
+    if(!data||data.ok!==true)throw new Error(data?.error||'예매사이트 정보를 불러오지 못했습니다.');
+    showBookingList(Array.isArray(data.bookingSites)?data.bookingSites:[]);
+  }catch(error){
+    // 실패 시 사용자가 원인을 알 수 있도록 일관된 안내를 표시합니다.
+    alert(error.message||'예매사이트 정보를 불러오지 못했습니다.');
+  }
 }
 
 // 공연 카드에는 기존 버튼 UI를 유지하되 저장된 공식 공연정보 링크를 엽니다.
