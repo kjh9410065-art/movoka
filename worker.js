@@ -88,14 +88,16 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 <strong>지역</strong><br>${escHtml(item.area || '정보 없음')}<br>\n<strong>장르</strong><br>${escHtml(item.genrenm || '정보 없음')}
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}\n<div class="source-box" style="margin-top:20px;padding:14px;border-radius:12px;background:#f7f7fa;color:#666;font-size:13px;line-height:1.7"><strong>공연정보 출처</strong><br>KOPIS 공연예술통합전산망에서 제공하는 공연 등록 정보를 표시합니다.<br>공연 일정·장소·출연진·예매 가능 여부는 변경될 수 있으므로 최종 정보는 예매처에서 확인하세요.</div>
-<div class="detail-actions">${item.prfurl ? '<a class="action-btn primary" href="'+escHtml(item.prfurl)+'" target="_blank" rel="noopener noreferrer">예매사이트</a>' : ''}<a class="action-btn" href="/">다른 공연 찾아보기</a></div>\n</article>
+<div class="detail-actions">${detail.bookingSites?.length ? '<button class="action-btn primary" type="button" onclick="openBookingList()">예매사이트</button>' : (item.prfurl ? '<a class="action-btn primary" href="'+escHtml(item.prfurl)+'" target="_blank" rel="noopener noreferrer">공식 공연정보</a>' : '')}<a class="action-btn" href="/">다른 공연 찾아보기</a></div>
+</article>
 
-<div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()"><div class="booking-box"><h3>예매사이트 선택</h3><div class="booking-links" id="bookingLinks"></div><button class="booking-close" onclick="closeBookingList()">닫기</button></div></div>
+<div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()"><div class="booking-box"><h3>예매사이트 선택</h3><div class="booking-links">${(detail.bookingSites||[]).map(site=>'<a class="action-btn" href="'+escHtml(site.url)+'" target="_blank" rel="noopener noreferrer">'+escHtml(site.name)+'</a>').join('') || '<div>등록된 외부 예매사이트가 없습니다.</div>'}</div><button class="booking-close" onclick="closeBookingList()">닫기</button></div></div>
 <script>
 /* 버튼으로만 다크모드를 전환하고 선택값을 저장합니다. */
 (function(){const key='movoka-theme';const apply=mode=>{document.body.classList.toggle('dark',mode==='dark');const b=document.getElementById('themeToggle');if(b)b.textContent=mode==='dark'?'☀️ 라이트모드':'🌙 다크모드';};apply(localStorage.getItem(key)||'light');document.getElementById('themeToggle').onclick=()=>{const next=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(key,next);apply(next);};})();
 
 /* 상세 페이지의 모달 닫기만 처리합니다. 공연정보 링크는 저장된 prfurl을 사용합니다. */
+function openBookingList(){document.getElementById('bookingList').style.display='flex'}
 function closeBookingList(){document.getElementById('bookingList').style.display='none';}
 </script>
 <footer style="margin-top:24px;color:#73798a;font-size:13px"><p style="margin:0 0 10px">데이터 출처: KOPIS 공연예술통합전산망</p>
@@ -104,6 +106,44 @@ function closeBookingList(){document.getElementById('bookingList').style.display
 <a href="/contact.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">문의하기</a>
 </footer>
 </main></body></html>`;
+}
+
+// KOPIS 상세 XML에서 줄거리와 실제 예매처 정보를 추출합니다.
+function parsePerformanceDetail(xml) {
+  const get = tag => xml.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'))?.[1]?.trim() || '';
+  const clean = value => String(value || '').replace(/^<!\\[CDATA\\[/, '').replace(/\\]\\]>$/, '').trim();
+  const block = xml.match(/<relates>[\\s\\S]*?<\\/relates>/)?.[0] || '';
+  const sites = [];
+  const seen = new Set();
+  const pairRegex = /<relatenm>([\\s\\S]*?)<\\/relatenm>[\\s\\S]*?<relateurl>([\\s\\S]*?)<\\/relateurl>/g;
+  for (const match of block.matchAll(pairRegex)) {
+    const name = clean(match[1]);
+    try {
+      const url = new URL(clean(match[2]));
+      if (!/^https?:$/.test(url.protocol)) continue;
+      url.hash = '';
+      const host = url.hostname.replace(/^www\\./, '').toLowerCase();
+      if (!host || seen.has(host)) continue;
+      seen.add(host);
+      sites.push({ name: name || '예매사이트', url: url.href });
+    } catch {}
+  }
+  return { sty: clean(get('sty')), styurls: clean(get('styurls')), bookingSites: sites };
+}
+
+// 상세 페이지와 예매사이트 클릭 시에만 KOPIS 상세 API를 호출합니다.
+async function fetchPerformanceDetail(key, id) {
+  if (!key) return { sty: '', styurls: '', bookingSites: [] };
+  try {
+    const detailUrl = new URL(KOPIS_BASE + '/' + id);
+    detailUrl.searchParams.set('service', key);
+    const response = await fetch(detailUrl.toString(), { redirect: 'follow' });
+    const xml = await response.text();
+    if (!response.ok || !xml.includes('<db>')) return { sty: '', styurls: '', bookingSites: [] };
+    return parsePerformanceDetail(xml);
+  } catch {
+    return { sty: '', styurls: '', bookingSites: [] };
+  }
 }
 
 // 정적 공연 JSON에서 특정 공연을 찾아 상세 페이지를 만듭니다.
@@ -155,7 +195,8 @@ export default {
     if (performanceMatch) {
       const item = await findPerformance(env, performanceMatch[1], url);
       if (!item) return new Response('공연 정보를 찾을 수 없습니다.', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-      return new Response(renderPerformancePage(item), {
+      const detail = await fetchPerformanceDetail(key, performanceMatch[1]);
+      return new Response(renderPerformancePage(item, detail), {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400'
@@ -164,6 +205,32 @@ export default {
     }
 
     // 홈페이지 HTML에도 네이버 소유확인 태그를 강제로 삽입합니다.
+    // 공연 카드에서 요청한 경우에만 KOPIS 상세 API를 호출해 실제 예매처 정보를 반환합니다.
+    if (url.pathname === '/api/performance') {
+      const id = url.searchParams.get('mt20id') || '';
+      if (!/^PF\\d+$/.test(id)) return Response.json({ ok: false, error: '잘못된 공연 ID입니다.' }, { status: 400 });
+      if (!key) return Response.json({ ok: false, error: 'KOPIS_API_KEY가 Worker에 없습니다.' }, { status: 500 });
+      const cache = caches.default;
+      const cacheKey = new Request(url.toString(), request);
+      const cached = await cache.match(cacheKey);
+      if (cached) return cached;
+      try {
+        const detailUrl = new URL(KOPIS_BASE + '/' + id);
+        detailUrl.searchParams.set('service', key);
+        const response = await fetch(detailUrl.toString(), { redirect: 'follow' });
+        const xml = await response.text();
+        if (!response.ok || !xml.includes('<db>')) throw new Error('KOPIS 상세 응답 오류');
+        const parsed = parsePerformanceDetail(xml);
+        const body = '<db><relates>' + parsed.bookingSites.map(site => '<relatenm>' + escHtml(site.name) + '</relatenm><relateurl>' + escHtml(site.url) + '</relateurl>').join('') + '</relates></db>';
+        const result = new Response(body, { headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=1800' } });
+        await cache.put(cacheKey, result.clone());
+        return result;
+      } catch (error) {
+        return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
+      }
+    }
+
+
     if (url.pathname === '/') {
       const assetResponse = await env.ASSETS.fetch(request);
       if (assetResponse.ok && (assetResponse.headers.get('content-type') || '').includes('text/html')) {
