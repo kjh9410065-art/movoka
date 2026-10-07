@@ -246,7 +246,6 @@ function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPage
 function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager').innerHTML=Array.from({length:totalPages},(_,i)=>`<button class="page ${i+1===page?'active':''}" data-page="${i+1}">${i+1}</button>`).join('');$('pager').onclick=e=>{const b=e.target.closest('.page');if(!b)return;page=Number(b.dataset.page);render();scrollTo({top:0,behavior:'smooth'})}}
 
 // 장르와 검색어를 이미 받아둔 전체 데이터에 적용합니다.
-// 공연 내용 자체가 선정적이거나 명백한 성인 대상임을 판별합니다. 관람연령(prfage)은 판별 기준으로 사용하지 않습니다.
 function filterData(){const keyword=$('q').value.trim().toLowerCase();const base=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').toLowerCase().includes(keyword)));allCurrent=base(window.__rawCurrent||[]);allUpcoming=base(window.__rawUpcoming||[]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}
 
 // 저장된 일일 데이터 파일을 한 번만 읽습니다. 캐시된 이전 JSON을 피합니다.
