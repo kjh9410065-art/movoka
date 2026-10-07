@@ -5,6 +5,11 @@
 const KOPIS_BASE = 'https://www.kopis.or.kr/openApi/restful/pblprfr';
 const ROWS = 100;
 
+// HTML에 삽입되는 KOPIS 문자열의 특수문자를 안전하게 이스케이프합니다.
+function escHtml(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // KOPIS 목록 XML을 MOVOKA 공연 객체로 변환합니다.
 function parseList(xml) {
   const matches = xml.match(/<db>[\s\S]*?<\/db>/g) || [];
