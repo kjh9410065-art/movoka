@@ -2,7 +2,7 @@
 // GitHub Actions 서버에서 실행되므로 사용자 PC가 켜져 있을 필요가 없습니다.
 // 공연 데이터 강제 갱신이 필요한 경우에도 이 파일 변경으로 Actions를 즉시 실행할 수 있습니다.
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 
 const API_BASE = process.env.MOVOKA_API_BASE || 'https://movoka.tcflick.com';
 const OUTPUT = 'public/data/performances.json';
@@ -14,7 +14,6 @@ const REQUEST_DELAY_MS = 1800;
 const WINDOW_DELAY_MS = 3000;
 const MAX_RETRIES = 5;
 
-// KST 기준 날짜를 YYYYMMDD 형식으로 만들고 날짜 이동도 정확히 처리합니다.
 function dateKst(offsetDays = 0) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -25,23 +24,6 @@ function dateKst(offsetDays = 0) {
   const m = String(date.getUTCMonth() + 1).padStart(2, '0');
   const d = String(date.getUTCDate()).padStart(2, '0');
   return `${y}${m}${d}`;
-}
-
-// KOPIS 조회 결과를 페이지 끝까지 전부 가져옵니다. 공연 등록 수에는 상한을 두지 않습니다.
-
-// 같은 KST 날짜에 이미 정상 갱신된 데이터가 있으면 KOPIS API를 다시 호출하지 않습니다.
-async function alreadyRefreshedToday(today) {
-  try {
-    const existing = JSON.parse(await readFile(OUTPUT, 'utf8'));
-    const updatedAt = new Date(existing.updatedAt);
-    if (!Number.isFinite(updatedAt.getTime())) return false;
-    const existingKst = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-    }).format(updatedAt).replaceAll('-', '');
-    return existingKst === today && Array.isArray(existing.items) && existing.items.length > 0;
-  } catch {
-    return false;
-  }
 }
 
 async function fetchWindow(start, end) {
@@ -59,7 +41,6 @@ async function fetchWindow(start, end) {
     let data;
     let lastError;
 
-    // KOPIS Worker가 일시적으로 요청을 차단해도 바로 실패하지 않고 지연 후 재시도합니다.
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
       if (attempt > 1) await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS * attempt * 1.5));
       try {
@@ -82,17 +63,14 @@ async function fetchWindow(start, end) {
     items.push(...pageItems);
     console.log(`전체, ${start}~${end}, page ${page}: ${pageItems.length}개`);
 
-    // 100개 미만이면 마지막 페이지이므로 다음 날짜 구간으로 넘어갑니다.
     if (pageItems.length < ROWS) break;
     page += 1;
-    // 연속 페이지 요청 사이에도 간격을 두어 KOPIS 요청 차단을 줄입니다.
     await new Promise(resolve => setTimeout(resolve, REQUEST_DELAY_MS));
   }
 
   return items;
 }
 
-// KOPIS의 31일 조회 제한에 맞춰 모든 후보를 30일 구간으로 나눠 수집합니다.
 async function fetchWindows(startOffset, endOffset) {
   const all = [];
   let cursor = startOffset;
@@ -101,19 +79,16 @@ async function fetchWindows(startOffset, endOffset) {
     const next = Math.min(cursor + WINDOW_DAYS, endOffset);
     all.push(...await fetchWindow(dateKst(cursor), dateKst(next)));
     cursor = next;
-    // 날짜 구간을 바꿀 때도 충분히 쉬어 KOPIS의 연속 요청 제한을 피합니다.
     if (cursor < endOffset) await new Promise(resolve => setTimeout(resolve, WINDOW_DELAY_MS));
   }
 
   return all;
 }
 
-// 날짜 문자열을 YYYYMMDD 비교용으로 정규화합니다.
 function compactDate(value) {
   return String(value || '').replaceAll('.', '');
 }
 
-// 오늘 날짜가 공연기간 안에 포함되는 공연을 공연중으로 분류합니다.
 function filterCurrent(items, today) {
   return items.filter(item => {
     const from = compactDate(item.prfpdfrom);
@@ -122,12 +97,10 @@ function filterCurrent(items, today) {
   });
 }
 
-// 오늘 이후 시작하는 공연을 공연예정으로 분류합니다.
 function filterUpcoming(items, today) {
   return items.filter(item => compactDate(item.prfpdfrom) > today);
 }
 
-// 여러 조회 구간에서 중복된 공연 ID를 하나로 합칩니다.
 function uniqueById(items, state) {
   const map = new Map();
   for (const item of items) {
@@ -137,7 +110,6 @@ function uniqueById(items, state) {
   return [...map.values()];
 }
 
-// 공연 예정은 시작일이 빠른 순서대로 정렬합니다.
 function sortUpcoming(items) {
   return [...items].sort((a, b) => {
     const dateCompare = compactDate(a.prfpdfrom).localeCompare(compactDate(b.prfpdfrom));
@@ -146,7 +118,6 @@ function sortUpcoming(items) {
   });
 }
 
-// 공연 종료일이 오늘보다 이전인 데이터는 제외하고 현재/예정 공연만 저장합니다.
 function normalize(items, today) {
   const current = uniqueById(filterCurrent(items, today), '02');
   const upcoming = sortUpcoming(uniqueById(filterUpcoming(items, today), '01'));
@@ -155,22 +126,16 @@ function normalize(items, today) {
 }
 
 // 매일 새로 조회하고 현재/예정 공연을 분리해 저장합니다.
+// 공연 종료일이 오늘보다 이전인 데이터는 결과에서 제외됩니다.
 const today = dateKst(0);
-
-// 같은 날 재실행되면 KOPIS 호출 자체를 건너뜁니다.
-if (await alreadyRefreshedToday(today)) {
-  console.log(`이미 ${today}에 정상 갱신된 데이터가 있어 KOPIS 호출을 건너뜁니다.`);
-  process.exit(0);
-}
 const candidates = await fetchWindows(-MAX_LOOKBACK_DAYS, MAX_LOOKAHEAD_DAYS);
 const data = normalize(candidates, today);
 
-// KOPIS가 비정상적으로 빈 결과를 반환하면 기존 정상 데이터를 보호하기 위해 저장을 중단합니다.
+// KOPIS가 비정상적으로 빈 결과를 반환하면 기존 정상 데이터를 보호합니다.
 if (candidates.length === 0 || data.items.length === 0) {
   throw new Error('공연 데이터가 0건이라 기존 데이터를 보호하기 위해 갱신을 중단합니다.');
 }
 
-// 최종 결과 JSON을 정적 파일로 저장합니다.
 await mkdir('public/data', { recursive: true });
 await writeFile(OUTPUT, JSON.stringify(data), 'utf8');
 console.log(`완료: 현재 ${data.current.length}개 / 예정 ${data.upcoming.length}개 / 전체 ${data.items.length}개`);
