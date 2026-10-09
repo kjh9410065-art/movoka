@@ -69,7 +69,7 @@ jobs:
             const urls = [...sitemap.matchAll(/<loc>(.*?)<\\/loc>/g)].map(match => match[1]);
             if (!sitemap.includes('<urlset') || new Set(urls).size !== urls.length) throw new Error('사이트맵 형식 또는 중복 URL 검증 실패');
             console.log(`검증 성공: 공연 ${data.items.length}건, 종료 공연 0건, 사이트맵 URL ${urls.length}개, KST ${today}`);
-            NODE
+          NODE
 
             git add public/data/performances.json public/sitemap.xml
             if git diff --cached --quiet; then
