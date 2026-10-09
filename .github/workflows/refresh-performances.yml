@@ -63,10 +63,10 @@ jobs:
               throw new Error('공연 데이터 스키마 또는 전체 건수 검증 실패');
             }
             const compact = value => String(value ?? '').replaceAll('.', '').replaceAll('-', '').replaceAll('/', '');
-            const expired = data.items.filter(item => !/^\\d{8}$/.test(compact(item.prfpdto)) || compact(item.prfpdto) < today);
+            const expired = data.items.filter(item => !/^\d{8}$/.test(compact(item.prfpdto)) || compact(item.prfpdto) < today);
             if (expired.length) throw new Error(`종료일 검증 실패: ${expired.length}건`);
             const sitemap = await readFile('public/sitemap.xml', 'utf8');
-            const urls = [...sitemap.matchAll(/<loc>(.*?)<\\/loc>/g)].map(match => match[1]);
+            const urls = [...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map(match => match[1]);
             if (!sitemap.includes('<urlset') || new Set(urls).size !== urls.length) throw new Error('사이트맵 형식 또는 중복 URL 검증 실패');
             console.log(`검증 성공: 공연 ${data.items.length}건, 종료 공연 0건, 사이트맵 URL ${urls.length}개, KST ${today}`);
           NODE
