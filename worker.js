@@ -27,10 +27,16 @@ function parseList(xml) {
 
 // KOPIS XML 응답을 검증하고 반환합니다.
 async function callKopis(url) {
-  const response = await fetch(url.toString(), { redirect: 'follow' });
+  const response = await fetch(url.toString(), { redirect: 'follow', signal: AbortSignal.timeout(25000) });
   const text = await response.text();
-  if (!response.ok) throw new Error(`KOPIS HTTP ${response.status}: ${text.slice(0, 300)}`);
-  if (!text.includes('<dbs') && !text.includes('<db>')) throw new Error(`KOPIS 응답 형식 오류: ${text.slice(0, 300)}`);
+  if (!response.ok) {
+    const error = new Error(`KOPIS HTTP ${response.status}`);
+    error.upstreamStatus = response.status;
+    error.retryable = response.status === 429 || response.status >= 500 || (response.status === 400 && text.includes('Request Blocked'));
+    error.retryAfter = response.headers.get('retry-after');
+    throw error;
+  }
+  if (!/<dbs(?:\s|>|\/)/.test(text) || /<(?:error|errorCode|returnReasonCode)(?:\s|>)/i.test(text)) throw new Error('KOPIS 목록 XML 형식 오류');
   return text;
 }
 
@@ -311,9 +317,15 @@ export default {
       const rows = Number(url.searchParams.get('rows') || ROWS);
       try {
         const xml = await callKopis(makeListUrl(url, key, page, rows));
-        return Response.json({ ok: true, items: parseList(xml) }, { headers: { 'Cache-Control': 'no-store' } });
+        const items = parseList(xml);
+        // 정상 빈 dbs는 허용하되 파싱 누락을 빈 페이지로 취급하지 않습니다.
+        const records = (xml.match(/<db>/g) || []).length;
+        if (records !== items.length) throw new Error('KOPIS 목록 파싱 누락');
+        return Response.json({ ok: true, items }, { headers: { 'Cache-Control': 'no-store' } });
       } catch (error) {
-        return Response.json({ ok: false, error: String(error?.message || error) }, { status: 502 });
+        const headers = { 'Cache-Control': 'no-store' };
+        if (error.retryAfter) headers['Retry-After'] = error.retryAfter;
+        return Response.json({ ok: false, error: String(error?.message || error), upstreamStatus: error.upstreamStatus || null, retryable: error.retryable ?? true }, { status: 502, headers });
       }
     }
 
@@ -326,3 +338,4 @@ export default {
   }
 };
 // Cloudflare production rebuild trigger: 2026-10-07
+

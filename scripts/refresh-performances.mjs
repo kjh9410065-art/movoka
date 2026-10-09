@@ -1,6 +1,7 @@
 // MOVOKA 일일 공연 데이터 갱신 프로그램
 // KOPIS API를 통해 현재/예정 공연을 수집하고 검증 후 원자적으로 저장합니다.
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { compactDate, refreshDate, validateData } from './refresh-utils.mjs';
 
 const API_BASE = process.env.MOVOKA_API_BASE || 'https://movoka.tcflick.com';
 const OUTPUT = 'public/data/performances.json';
@@ -14,19 +15,11 @@ const MAX_RETRIES = 5;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// 모든 페이지와 재시도는 실행 시작 시 고정한 KST 날짜를 사용합니다.
+const today = refreshDate();
 function dateKst(offsetDays = 0) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  const date = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day) + offsetDays));
-  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, '0')}${String(date.getUTCDate()).padStart(2, '0')}`;
-}
-
-function compactDate(value) {
-  const raw = String(value ?? '').trim();
-  const digits = raw.replaceAll('.', '').replaceAll('-', '').replaceAll('/', '');
-  return /^\d{8}$/.test(digits) ? digits : '';
+  const date = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(4, 6)) - 1, Number(today.slice(6, 8)) + offsetDays));
+  return date.toISOString().slice(0, 10).replaceAll('-', '');
 }
 
 function validDateRange(item) {
@@ -38,7 +31,9 @@ function validDateRange(item) {
 async function fetchWindow(start, end) {
   const items = [];
   let page = 1;
+  const seenPages = new Set();
   while (true) {
+    if (page > 1000) throw new Error(`페이지 상한 초과: ${start}~${end}`);
     const url = new URL('/api/performances', API_BASE);
     url.searchParams.set('page', String(page));
     url.searchParams.set('rows', String(ROWS));
@@ -65,19 +60,27 @@ async function fetchWindow(start, end) {
         }
         const error = new Error(data?.error || `API 요청 실패: HTTP ${response.status}`);
         error.status = response.status;
+        error.retryable = data?.retryable;
+        const retryAfter = response.headers.get('retry-after');
+        const seconds = Number(retryAfter);
+        error.retryAfterMs = retryAfter ? Math.max(0, Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now()) : 0;
         throw error;
       } catch (error) {
         lastError = error;
         const status = error?.status;
-        const retryable = !status || status === 429 || status >= 500;
+        const retryable = error.retryable ?? (!status || status === 429 || status >= 500);
         console.error(`[수집 실패] ${start}~${end} page=${page}, 시도=${attempt}/${MAX_RETRIES}: ${error.message}`);
         if (!retryable || attempt === MAX_RETRIES) break;
         const retryAfter = Number(error?.retryAfterMs || 0);
-        await sleep(retryAfter || Math.min(60000, 1500 * (2 ** (attempt - 1))));
+        await sleep(Math.min(60000, retryAfter || 1500 * (2 ** (attempt - 1))) + Math.floor(Math.random() * 1000));
       }
     }
     if (!pageItems) throw new Error(`공연 수집 최종 실패: ${lastError?.message || '알 수 없는 오류'}`);
 
+    // 프록시가 같은 페이지를 반복 반환하면 불완전한 결과를 저장하지 않습니다.
+    const signature = pageItems.map(item => item.mt20id).join(',');
+    if (pageItems.length && seenPages.has(signature)) throw new Error(`반복 페이지 감지: ${start}~${end} page=${page}`);
+    seenPages.add(signature);
     items.push(...pageItems);
     console.log(`[수집] ${start}~${end}, page ${page}: ${pageItems.length}개`);
     if (pageItems.length < ROWS) break;
@@ -137,7 +140,7 @@ function normalize(items, today) {
 }
 
 async function main() {
-  const today = dateKst(0);
+
   console.log(`[시작] MOVOKA 갱신 / 한국 날짜=${today}`);
   const candidates = await fetchWindows(-MAX_LOOKBACK_DAYS, MAX_LOOKAHEAD_DAYS);
   console.log(`[수집 완료] 전체 후보 ${candidates.length}개`);
@@ -156,6 +159,7 @@ async function main() {
   const expired = check.items.filter(item => compactDate(item.prfpdto) < today);
   if (expired.length) throw new Error(`최종 저장 검증 실패: 종료 공연 ${expired.length}개`);
 
+  validateData(check, today);
   await rename(temporary, OUTPUT);
   console.log(`[성공] 현재 ${data.current.length}개 / 예정 ${data.upcoming.length}개 / 전체 ${data.items.length}개`);
   console.log(`[성공] 기준일=${today}, 저장=${OUTPUT}`);
@@ -165,3 +169,4 @@ main().catch(error => {
   console.error(`[갱신 실패] ${error.stack || error.message}`);
   process.exitCode = 1;
 });
+

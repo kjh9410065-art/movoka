@@ -1,6 +1,7 @@
 // MOVOKA sitemap 생성 프로그램
 // 유효한 현재/예정 공연만 사이트맵에 반영합니다.
 import { readFile, rename, writeFile } from 'node:fs/promises';
+import { compactDate, refreshDate, validateData } from './refresh-utils.mjs';
 
 const INPUT = 'public/data/performances.json';
 const OUTPUT = 'public/sitemap.xml';
@@ -13,20 +14,14 @@ function escapeXml(value) {
   }[char]));
 }
 
-function compactDate(value) {
-  const date = String(value ?? '').trim().replaceAll('.', '').replaceAll('-', '').replaceAll('/', '');
-  return /^\d{8}$/.test(date) ? date : '';
-}
-
-const today = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
-}).format(new Date()).replaceAll('-', '');
+const today = refreshDate();
 
 const data = JSON.parse(await readFile(INPUT, 'utf8'));
 if (!Array.isArray(data.current) || !Array.isArray(data.upcoming) || !Array.isArray(data.items)) {
   throw new Error('공연 데이터 스키마가 올바르지 않아 사이트맵 생성을 중단합니다.');
 }
 
+validateData(data, today);
 const allItems = [...data.current, ...data.upcoming];
 const validItems = allItems.filter(item => {
   const end = compactDate(item.prfpdto);
@@ -56,3 +51,4 @@ if (!verify.includes('<urlset') || locs.length !== urls.length || new Set(locs).
 }
 await rename(TEMP, OUTPUT);
 console.log(`사이트맵 완료: 공연 ${ids.length}개 + 기본 페이지 ${staticUrls.length}개 / 종료 공연 제외 / KST 기준일 ${today}`);
+
