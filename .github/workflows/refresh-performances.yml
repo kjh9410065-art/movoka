@@ -1,5 +1,4 @@
 # MOVOKA 공연 데이터를 매일 오전 7시(KST)에 갱신합니다.
-# GitHub 서버에서 실행되므로 사용자 PC가 꺼져 있어도 작동합니다.
 name: MOVOKA Daily Performance Refresh
 
 concurrency:
@@ -9,13 +8,13 @@ concurrency:
 on:
   schedule:
     - cron: '0 22 * * *'
+  workflow_dispatch:
   push:
     paths:
       - 'scripts/refresh-performances.mjs'
       - 'scripts/generate-sitemap.mjs'
       - '.github/workflows/refresh-performances.yml'
       - 'worker.js'
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,41 +22,84 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Checkout
+      - name: Checkout latest branch
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Refresh performance data
-        run: node scripts/refresh-performances.mjs
-
-      - name: Generate sitemap
-        run: node scripts/generate-sitemap.mjs
-
-      - name: Commit updated data
+      - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/performances.json public/sitemap.xml
-          git diff --cached --quiet || git commit -m "chore: refresh MOVOKA performance data"
-          git push
 
+      - name: Refresh, validate, and push with conflict recovery
+        shell: bash
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+          for attempt in 1 2 3; do
+            echo "::group::Refresh attempt ${attempt}/3"
+            git fetch origin "${BRANCH}"
+            git reset --hard "origin/${BRANCH}"
+
+            node --unhandled-rejections=strict scripts/refresh-performances.mjs
+            node --unhandled-rejections=strict scripts/generate-sitemap.mjs
+
+            node --input-type=module <<'NODE'
+            import { readFile } from 'node:fs/promises';
+            const today = new Intl.DateTimeFormat('en-CA', {
+              timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
+            }).format(new Date()).replaceAll('-', '');
+            const data = JSON.parse(await readFile('public/data/performances.json', 'utf8'));
+            if (!Array.isArray(data.items) || !Array.isArray(data.current) || !Array.isArray(data.upcoming) || data.items.length === 0) {
+              throw new Error('공연 데이터 스키마 또는 전체 건수 검증 실패');
+            }
+            const compact = value => String(value ?? '').replaceAll('.', '').replaceAll('-', '').replaceAll('/', '');
+            const expired = data.items.filter(item => !/^\\d{8}$/.test(compact(item.prfpdto)) || compact(item.prfpdto) < today);
+            if (expired.length) throw new Error(`종료일 검증 실패: ${expired.length}건`);
+            const sitemap = await readFile('public/sitemap.xml', 'utf8');
+            const urls = [...sitemap.matchAll(/<loc>(.*?)<\\/loc>/g)].map(match => match[1]);
+            if (!sitemap.includes('<urlset') || new Set(urls).size !== urls.length) throw new Error('사이트맵 형식 또는 중복 URL 검증 실패');
+            console.log(`검증 성공: 공연 ${data.items.length}건, 종료 공연 0건, 사이트맵 URL ${urls.length}개, KST ${today}`);
+          NODE
+
+            git add public/data/performances.json public/sitemap.xml
+            if git diff --cached --quiet; then
+              echo "데이터와 사이트맵 검증 완료. 변경사항이 없어 커밋은 생략합니다."
+              echo "::endgroup::"
+              exit 0
+            fi
+            git commit -m "chore: refresh MOVOKA performance data"
+            if git push origin "HEAD:${BRANCH}"; then
+              echo "Git push 성공"
+              echo "::endgroup::"
+              exit 0
+            fi
+
+            echo "Push 실패. 최신 원격 브랜치 기준으로 데이터와 사이트맵을 다시 생성합니다."
+            echo "::endgroup::"
+            sleep $((attempt * 5))
+          done
+          echo "::error::3회 재시도 후에도 갱신 결과를 push하지 못했습니다."
+          exit 1
 
       - name: Refresh summary
+        if: success()
         run: |
-          node -e "const fs=require('fs'); const d=JSON.parse(fs.readFileSync('public/data/performances.json','utf8')); console.log('MOVOKA refresh completed successfully'); console.log('기준일:', d.updatedAt); console.log('현재 공연:', d.current.length); console.log('공연 예정:', d.upcoming.length); console.log('전체:', d.items.length);"
-# Manual refresh trigger: 2026-09-30
-# Refresh trigger: 2026-10-06
-# Refresh trigger: 2026-10-06 manual refresh
-
-# Refresh trigger: 2026-10-07 07:07 KST
-
-# Manual refresh: 2026-10-06T22:10:53.289Z
-
-# Execution trigger: 2026-10-07T07:00:00+09:00
-
-# Retry trigger: 2026-10-07T07:01:00+09:00
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const d = JSON.parse(await readFile('public/data/performances.json', 'utf8'));
+          console.log('MOVOKA refresh and validation completed.');
+          console.log('updatedAt:', d.updatedAt);
+          console.log('현재 공연:', d.current.length);
+          console.log('공연 예정:', d.upcoming.length);
+          console.log('전체:', d.items.length);
+          NODE
