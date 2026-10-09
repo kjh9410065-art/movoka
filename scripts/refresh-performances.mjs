@@ -26,7 +26,7 @@ function dateKst(offsetDays = 0) {
 function compactDate(value) {
   const raw = String(value ?? '').trim();
   const digits = raw.replaceAll('.', '').replaceAll('-', '').replaceAll('/', '');
-  return /^\\d{8}$/.test(digits) ? digits : '';
+  return /^\d{8}$/.test(digits) ? digits : '';
 }
 
 function validDateRange(item) {
