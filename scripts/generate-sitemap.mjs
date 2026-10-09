@@ -15,7 +15,7 @@ function escapeXml(value) {
 
 function compactDate(value) {
   const date = String(value ?? '').trim().replaceAll('.', '').replaceAll('-', '').replaceAll('/', '');
-  return /^\\d{8}$/.test(date) ? date : '';
+  return /^\d{8}$/.test(date) ? date : '';
 }
 
 const today = new Intl.DateTimeFormat('en-CA', {
@@ -50,7 +50,7 @@ ${urls.map(url => `  <url><loc>${escapeXml(url)}</loc></url>`).join('\n')}
 
 await writeFile(TEMP, xml, 'utf8');
 const verify = await readFile(TEMP, 'utf8');
-const locs = [...verify.matchAll(/<loc>(.*?)<\\/loc>/g)].map(match => match[1]);
+const locs = [...verify.matchAll(/<loc>(.*?)<\/loc>/g)].map(match => match[1]);
 if (!verify.includes('<urlset') || locs.length !== urls.length || new Set(locs).size !== locs.length) {
   throw new Error('임시 사이트맵 검증 실패. 기존 사이트맵을 보존합니다.');
 }
