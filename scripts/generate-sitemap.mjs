@@ -1,37 +1,58 @@
-// MOVOKA sitemap 생성 프로그램입니다.
-// 매일 갱신된 공연 데이터에서 현재/예정 공연의 상세 URL을 자동으로 만듭니다.
-
-import { readFile, writeFile } from 'node:fs/promises';
+// MOVOKA sitemap 생성 프로그램
+// 유효한 현재/예정 공연만 사이트맵에 반영합니다.
+import { readFile, rename, writeFile } from 'node:fs/promises';
 
 const INPUT = 'public/data/performances.json';
 const OUTPUT = 'public/sitemap.xml';
+const TEMP = `${OUTPUT}.tmp`;
 const BASE = 'https://movoka.tcflick.com';
 
-// XML에 안전하게 넣을 수 있도록 문자열을 이스케이프합니다.
 function escapeXml(value) {
   return String(value ?? '').replace(/[<>&'"]/g, char => ({
     '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;'
   }[char]));
 }
 
-// 현재/예정 공연을 중복 없이 수집합니다.
-const data = JSON.parse(await readFile(INPUT, 'utf8'));
-const items = [...(data.current || []), ...(data.upcoming || [])];
-const ids = [...new Set(items.map(item => item.mt20id).filter(Boolean))];
+function compactDate(value) {
+  const date = String(value ?? '').trim().replaceAll('.', '').replaceAll('-', '').replaceAll('/', '');
+  return /^\\d{8}$/.test(date) ? date : '';
+}
 
-// 홈과 공연 상세 페이지를 모두 sitemap에 등록합니다.
+const today = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit'
+}).format(new Date()).replaceAll('-', '');
+
+const data = JSON.parse(await readFile(INPUT, 'utf8'));
+if (!Array.isArray(data.current) || !Array.isArray(data.upcoming) || !Array.isArray(data.items)) {
+  throw new Error('공연 데이터 스키마가 올바르지 않아 사이트맵 생성을 중단합니다.');
+}
+
+const allItems = [...data.current, ...data.upcoming];
+const validItems = allItems.filter(item => {
+  const end = compactDate(item.prfpdto);
+  return Boolean(item.mt20id && end && end >= today);
+});
+const ids = [...new Set(validItems.map(item => item.mt20id))];
+if (ids.length === 0) throw new Error('사이트맵에 등록할 유효 공연이 0건입니다. 기존 사이트맵을 보존합니다.');
+
 const staticUrls = ['/', '/terms.html', '/privacy.html', '/contact.html'];
 const urls = [
-  ...staticUrls.map(path => `  <url><loc>${escapeXml(BASE + path)}</loc></url>`),
-  ...ids.map(id => `  <url><loc>${escapeXml(BASE + '/performance/' + encodeURIComponent(id))}</loc></url>`)
+  ...staticUrls.map(path => BASE + path),
+  ...ids.map(id => BASE + '/performance/' + encodeURIComponent(id))
 ];
+if (new Set(urls).size !== urls.length) throw new Error('사이트맵 URL 중복이 발견되었습니다.');
 
 const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls.join('\n')}
+${urls.map(url => `  <url><loc>${escapeXml(url)}</loc></url>`).join('\n')}
 </urlset>
 `;
 
-// 검색엔진이 발견할 수 있도록 최신 공연 URL 목록을 저장합니다.
-await writeFile(OUTPUT, xml, 'utf8');
-console.log(`sitemap 완료: ${ids.length}개 공연 상세 URL + 서비스 기본 페이지`);
+await writeFile(TEMP, xml, 'utf8');
+const verify = await readFile(TEMP, 'utf8');
+const locs = [...verify.matchAll(/<loc>(.*?)<\\/loc>/g)].map(match => match[1]);
+if (!verify.includes('<urlset') || locs.length !== urls.length || new Set(locs).size !== locs.length) {
+  throw new Error('임시 사이트맵 검증 실패. 기존 사이트맵을 보존합니다.');
+}
+await rename(TEMP, OUTPUT);
+console.log(`사이트맵 완료: 공연 ${ids.length}개 + 기본 페이지 ${staticUrls.length}개 / 종료 공연 제외 / KST 기준일 ${today}`);
