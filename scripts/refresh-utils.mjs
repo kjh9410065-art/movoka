@@ -6,7 +6,7 @@ export function compactDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10).replaceAll('-', '') === digits ? digits : '';
 }
 export function refreshDate() {
-  const value = process.env.MOVOKA_REFRESH_DATE || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()).replaceAll('-', '');
+  const value = process.env.MOVOKA_REFRESH_DATE || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date()).filter(part => ['year','month','day'].includes(part.type)).sort((a,b) => ['year','month','day'].indexOf(a.type)-['year','month','day'].indexOf(b.type)).map(part => part.value).join('');
   if (!compactDate(value)) throw new Error('잘못된 갱신 기준일');
   return value;
 }

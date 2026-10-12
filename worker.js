@@ -86,7 +86,7 @@ function renderPerformancePage(item, detail = {}) {
 <title>${title} | MOVOKA</title>
 <meta name="description" content="${description}">
 <meta name="robots" content="index,follow">
-<script type="application/ld+json">${JSON.stringify(eventData)}</script>
+<script type="application/ld+json">${JSON.stringify(eventData).replace(/</g, "\\u003c")}</script>
 <link rel="canonical" href="https://movoka.tcflick.com/performance/${encodeURIComponent(item.mt20id)}">
 <meta property="og:title" content="${title} | MOVOKA">
 <meta property="og:description" content="${description}">
@@ -219,7 +219,7 @@ export default {
 
     // robots.txt를 Worker에서 직접 반환해 네이버 검색로봇이 항상 200(text/plain)으로 읽도록 합니다.
     if (url.pathname === '/robots.txt') {
-      return new Response('User-agent: *\\nAllow: /\\n\\nSitemap: https://movoka.tcflick.com/sitemap.xml\\n', {
+      return new Response('User-agent: *\nAllow: /\n\nSitemap: https://movoka.tcflick.com/sitemap.xml\n', {
         status: 200,
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
