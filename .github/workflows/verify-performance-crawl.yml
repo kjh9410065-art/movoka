@@ -26,8 +26,7 @@ jobs:
           URL="https://movoka.tcflick.com/performance/PF301988"
           for attempt in $(seq 1 20); do
             HEADERS=$(curl -sS -D - --max-time 15 -A "Googlebot/2.1 (+http://www.google.com/bot.html)" "${URL}?deployment-check=$(date +%s%N)" -o /dev/null || true)
-            if echo "$HEADERS" | tr -d '\r' | grep -Eiq '^x-movoka-detail-handler: resilient-20261026
-; then
+            if echo "$HEADERS" | grep -Fqi "x-movoka-detail-handler: resilient-20261026"; then
               echo "Deployed handler confirmed on production performance URL."
               exit 0
             fi
