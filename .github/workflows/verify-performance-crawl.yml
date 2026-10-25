@@ -17,5 +17,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Test Worker detail page handler (parallel crawler requests)
+        run: node scripts/test-worker-performance.mjs
       - name: Inspect 20 reported performance URLs as Googlebot
         run: node scripts/verify-performance-pages.mjs
