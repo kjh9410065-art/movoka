@@ -110,7 +110,9 @@ $('chips').onclick=e=>{const b=e.target.closest('.chip');if(!b)return;active=b.d
 // 현재 공연과 공연 예정 탭을 전환합니다.
 document.querySelector('.tabs').onclick=e=>{const b=e.target.closest('.tab');if(!b)return;tab=b.dataset.tab;page=1;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));render()};
 $('search').onclick=filterData;
-$('q').onkeydown=e=>{if(e.key==='Enter')filterData()};
+$('q').onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing&&e.keyCode!==229)filterData()};
+$('q').addEventListener('input',e=>{if(!e.isComposing)filterData()});
+$('q').addEventListener('compositionend',filterData);
 
 // HTML 특수문자를 안전하게 표시합니다.
 function esc(v){return String(v||'').replace(/[&<>\"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]))}
@@ -240,7 +242,7 @@ function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPage
 function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager').innerHTML=Array.from({length:totalPages},(_,i)=>`<button class="page ${i+1===page?'active':''}" data-page="${i+1}">${i+1}</button>`).join('');$('pager').onclick=e=>{const b=e.target.closest('.page');if(!b)return;page=Number(b.dataset.page);render();scrollTo({top:0,behavior:'smooth'})}}
 
 // 장르와 검색어를 이미 받아둔 전체 데이터에 적용합니다.
-function filterData(){const keyword=$('q').value.trim().toLowerCase();const base=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').toLowerCase().includes(keyword)));allCurrent=base(window.__rawCurrent||[]);allUpcoming=base(window.__rawUpcoming||[]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}
+function filterData(){const keyword=$('q').value.normalize('NFKC').trim().toLowerCase();const base=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').normalize('NFKC').toLowerCase().includes(keyword)));allCurrent=base(window.__rawCurrent||[]);allUpcoming=base(window.__rawUpcoming||[]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}
 
 // 저장된 일일 데이터 파일을 한 번만 읽습니다. 캐시된 이전 JSON을 피합니다.
 async function load(){try{const response=await fetch('/data/performances.json?'+Date.now(),{cache:'no-store'});const data=await response.json();if(!response.ok||!data||!Array.isArray(data.items))throw new Error('저장된 공연 데이터가 없습니다.');window.__rawCurrent=data.current||[];window.__rawUpcoming=data.upcoming||[];$('updated').textContent=data.updatedAt?(()=>{const stamp=new Date(data.updatedAt);const hours=(Date.now()-stamp.getTime())/3600000;return Number.isFinite(hours)&&hours>48?`⚠ 데이터 갱신 지연 · 마지막 갱신 ${stamp.toLocaleString('ko-KR')}`:`마지막 갱신 ${stamp.toLocaleString('ko-KR')}`})():'⚠ 갱신 시각 확인 불가';filterData()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
