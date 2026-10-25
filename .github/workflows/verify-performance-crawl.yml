@@ -1,0 +1,21 @@
+name: MOVOKA production performance crawl check
+on:
+  push:
+    paths:
+      - 'scripts/verify-performance-pages.mjs'
+      - '.github/workflows/verify-performance-crawl.yml'
+      - 'worker.js'
+      - 'wrangler.jsonc'
+  workflow_dispatch:
+  schedule:
+    - cron: '30 1 * * *'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect 20 reported performance URLs as Googlebot
+        run: node scripts/verify-performance-pages.mjs
