@@ -19,5 +19,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test Worker detail page handler (parallel crawler requests)
         run: node scripts/test-worker-performance.mjs
+      - name: Verify the resilient Worker handler is deployed to production
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://movoka.tcflick.com/performance/PF301988"
+          for attempt in $(seq 1 20); do
+            HEADERS=$(curl -sS -D - --max-time 15 -A "Googlebot/2.1 (+http://www.google.com/bot.html)" "${URL}?deployment-check=$(date +%s%N)" -o /dev/null || true)
+            if echo "$HEADERS" | tr -d '\r' | grep -Eiq '^x-movoka-detail-handler: resilient-20261026
+; then
+              echo "Deployed handler confirmed on production performance URL."
+              exit 0
+            fi
+            echo "Production handler not updated yet; attempt $attempt/20"
+            sleep 10
+          done
+          echo "::error::Cloudflare has not deployed the resilient performance handler (or its response header is not visible)."
+          exit 1
       - name: Inspect 20 reported performance URLs as Googlebot
         run: node scripts/verify-performance-pages.mjs
