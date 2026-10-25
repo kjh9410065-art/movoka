@@ -171,7 +171,9 @@ async function fetchPerformanceDetail(key, id) {
   try {
     const detailUrl = new URL(KOPIS_BASE + '/' + id);
     detailUrl.searchParams.set('service', key);
-    const response = await fetch(detailUrl.toString(), { redirect: 'follow' });
+    const response = await fetch(detailUrl.toString(), {
+      redirect: 'follow', signal: AbortSignal.timeout(3500)
+    });
     const xml = await response.text();
     if (!response.ok || !xml.includes('<db>')) return { sty: '', styurls: '', bookingSites: [] };
     return parsePerformanceDetail(xml);
@@ -180,34 +182,63 @@ async function fetchPerformanceDetail(key, id) {
   }
 }
 
-// 정적 공연 JSON에서 특정 공연을 찾아 상세 페이지를 만듭니다.
+// Cache the public performance catalog inside each Worker isolate for a short period.
+// Googlebot may crawl many detail URLs in parallel: do not download and parse 2 MB of
+// performances JSON once per page when the same list can serve all detail requests.
+let catalogSnapshot = null;
+let catalogLoading = null;
+async function loadPerformanceCatalog(env, requestUrl) {
+  if (catalogSnapshot && catalogSnapshot.expires > Date.now()) return catalogSnapshot.byId;
+  if (catalogLoading) return catalogLoading;
+  catalogLoading = (async () => {
+    try {
+      const dataUrl = new URL('/data/performances.json', requestUrl);
+      const response = await env.ASSETS.fetch(new Request(dataUrl.toString(), {
+        method: 'GET', headers: { 'Accept': 'application/json' }
+      }));
+      if (!response.ok || !(response.headers.get('content-type') || '').includes('json')) {
+        throw new Error('performance catalog asset response invalid');
+      }
+      const data = await response.json();
+      if (!Array.isArray(data.current) || !Array.isArray(data.upcoming)) {
+        throw new Error('performance catalog has unexpected structure');
+      }
+      const byId = new Map([...data.current, ...data.upcoming].map(item => [item.mt20id, item]));
+      catalogSnapshot = { byId, expires: Date.now() + 120000 };
+      return byId;
+    } catch (error) {
+      console.error('MOVOKA catalog lookup error', String(error?.message || error));
+      // Use the last verified snapshot during transient asset errors.
+      return catalogSnapshot?.byId || new Map();
+    } finally {
+      catalogLoading = null;
+    }
+  })();
+  return catalogLoading;
+}
+
+// Preserve working detail links even when a performance leaves the daily list.
 async function findPerformance(env, id, requestUrl) {
-  // 현재 요청의 호스트를 사용해 Assets 바인딩에서 정적 JSON을 직접 읽습니다.
-  // Worker 자신의 공개 URL을 하드코딩하지 않아 상세 페이지 요청이 Worker로 재진입하는 문제를 피합니다.
-  const dataUrl = new URL('/data/performances.json', requestUrl);
-  const response = await env.ASSETS.fetch(new Request(dataUrl.toString(), {
-    method: 'GET',
-    headers: { 'Accept': 'application/json' }
-  }));
-  if (!response.ok) return null;
-  const contentType = response.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) return null;
-  const data = await response.json();
-  const stored = [...(data.current || []), ...(data.upcoming || [])].find(item => item.mt20id === id);
+  const catalog = await loadPerformanceCatalog(env, requestUrl);
+  const stored = catalog.get(id);
   if (stored) return stored;
 
-  // 일일 저장 데이터에서 빠진 공연도 상세 URL이 깨지지 않도록 KOPIS에서 직접 보완합니다.
+  // A missing archived performance may still have a valid KOPIS record.
+  // Keep this request bounded; an upstream stall must not time out a crawler.
   if (!env.KOPIS_API_KEY) return null;
   try {
     const detailUrl = new URL(KOPIS_BASE + '/' + id);
     detailUrl.searchParams.set('service', env.KOPIS_API_KEY);
-    const detailResponse = await fetch(detailUrl.toString(), { redirect: 'follow' });
+    const detailResponse = await fetch(detailUrl.toString(), {
+      redirect: 'follow', signal: AbortSignal.timeout(4500)
+    });
     const xml = await detailResponse.text();
     if (!detailResponse.ok || !xml.includes('<db>')) return null;
     const detail = parsePerformanceDetail(xml);
-    if (!detail.mt20id) return null;
+    if (!detail.mt20id || detail.mt20id !== id) return null;
     return detail;
-  } catch {
+  } catch (error) {
+    console.warn('MOVOKA archived performance lookup skipped', id, String(error?.message || error));
     return null;
   }
 }
@@ -249,7 +280,8 @@ export default {
       return new Response(renderPerformancePage(item, detail), {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400'
+          'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400',
+          'X-Movoka-Detail-Handler': 'resilient-20261026'
         }
       });
     }
