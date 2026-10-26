@@ -1,7 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "movoka",
+  "name": "movoka-preview",
   "main": "worker.js",
+  "workers_dev": true,
   "compatibility_date": "2026-09-13",
   "assets": {
     "directory": "./public",

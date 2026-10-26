@@ -85,18 +85,48 @@ function renderPerformancePage(item, detail = {}) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} | MOVOKA</title>
 <meta name="description" content="${description}">
-<meta name="robots" content="index,follow">
+<meta name="robots" content="noindex,nofollow">
 <script type="application/ld+json">${JSON.stringify(eventData).replace(/</g, "\\u003c")}</script>
 <link rel="canonical" href="https://movoka.tcflick.com/performance/${encodeURIComponent(item.mt20id)}">
 <meta property="og:title" content="${title} | MOVOKA">
 <meta property="og:description" content="${description}">
 ${poster}<style>
 *{box-sizing:border-box}body{margin:0;background:#f5f6fa;color:#171923;font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif}.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}.wrap{max-width:760px;margin:auto;padding:32px 18px 60px}.back{display:inline-block;color:#5b5bd6;text-decoration:none;font-weight:800}.card{background:#fff;border:1px solid #e5e7ee;border-radius:18px;padding:20px}.poster{max-width:280px;margin:auto}.poster img{display:block;width:100%;border-radius:12px}.tag{margin-top:20px;color:#5b5bd6;font-weight:800}.h1{font-size:32px;line-height:1.3;margin:8px 0 20px}.meta{line-height:1.9;color:#5f6575}.cast{margin-top:20px;padding-top:20px;border-top:1px solid #eee}.detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.action-btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 16px;border-radius:10px;border:1px solid #ddd;background:#fff;color:inherit;text-decoration:none;font-weight:800;cursor:pointer}.action-btn.primary{background:#5b5bd6;color:#fff;border-color:#5b5bd6}.theme-btn{border:1px solid #ddd;background:#fff;color:inherit;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer}.booking-list{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}.booking-box{width:min(420px,100%);background:#fff;color:#171923;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.2)}.booking-box h3{margin:0 0 14px}.booking-links{display:grid;gap:9px}.booking-links button{width:100%;padding:12px;border:1px solid #ddd;background:#fff;color:inherit;border-radius:10px;text-align:left;font-weight:700;cursor:pointer}.booking-close{margin-top:12px;width:100%;padding:10px;border:0;border-radius:10px;background:#f1f2f6;color:inherit;cursor:pointer}.dark{background:#15171c;color:#f1f3f6}.dark .card,.dark .booking-box{background:#20232a;color:#f1f3f6;border-color:#343944}.dark .meta{color:#b8becb}.dark .cast{border-color:#343944}.dark .action-btn,.dark .theme-btn,.dark .booking-links button{background:#252932;color:#f1f3f6;border-color:#3a3f4b}.synopsis-box{margin-top:16px;padding:16px;border:1px solid #e5e7ee;border-radius:12px;line-height:1.8}.dark .synopsis-box{border-color:#343944}.dark .booking-close{background:#30343d}.dark .source-box{background:#252932 !important;color:#b8becb !important}.dark .source-box strong{color:#f1f3f6}.dark .synopsis-box{background:#20232a;color:#f1f3f6}.dark .synopsis-box div{color:#b8becb}.dark footer{color:#b8becb !important}.dark footer a{color:#8b8ff0 !important}.dark .back{color:#8b8ff0}.dark .tag{color:#8b8ff0}
+
+/* Adaptive detail layout for the preview Worker only. */
+html,body{max-width:100%;overflow-x:clip}
+.wrap,.card,.detail-actions{min-width:0}
+.h1{font-size:clamp(25px,4vw,34px);overflow-wrap:anywhere}
+.meta,.source-box,.synopsis-box{overflow-wrap:anywhere}
+.action-btn,.theme-btn{min-height:44px;white-space:normal;word-break:keep-all}
+.detail-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.detail-actions .action-btn{min-width:0;text-align:center}
+.poster img{max-width:100%;height:auto;object-fit:contain}
+@media(min-width:600px) and (max-width:899px){
+  .wrap{max-width:760px;padding:26px 20px 50px}
+  .detail-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:599px){
+  .wrap{padding:22px 14px 38px}
+  .topbar{align-items:flex-start;gap:12px}
+  .card{padding:16px;border-radius:14px}
+  .h1{font-size:clamp(23px,6vw,30px)}
+  .detail-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .detail-actions .action-btn{padding:10px 8px;font-size:12px;line-height:1.45}
+  .poster{max-width:min(240px,100%)}
+  .booking-box{max-height:calc(100dvh - 24px);overflow:auto}
+}
+@media(max-width:319px){
+  .wrap{padding:18px 10px 30px}
+  .detail-actions{grid-template-columns:1fr}
+  .topbar .back{max-width:62%;font-size:12px}
+  .theme-btn{font-size:12px}
+}
 </style>
 </head>
 <body><main class="wrap">
 <div class="topbar"><a class="back" href="/">← MOVOKA 공연 목록</a><button class="theme-btn" id="themeToggle" type="button">🌙 다크모드</button></div>
-<article class="card">
+<article class="card" id="movokaPerformance" data-start="${escHtml(item.prfpdfrom)}" data-end="${escHtml(item.prfpdto)}">
 ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${title} 포스터"></div>` : ''}
 <div class="tag">${escHtml(status)} · ${escHtml(item.genrenm || '공연')}</div>
 <h1 class="h1">${title}</h1>
@@ -106,13 +136,76 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 <strong>지역</strong><br>${escHtml(item.area || '정보 없음')}<br>\n<strong>장르</strong><br>${escHtml(item.genrenm || '정보 없음')}
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}\n${detail.sty ? `<div class="synopsis-box"><strong>줄거리</strong><div style="margin-top:8px">${escHtml(detail.sty).replace(/\n/g, '<br>')}</div></div>` : ''}\n<div class="source-box" style="margin-top:20px;padding:14px;border-radius:12px;background:#f7f7fa;color:#666;font-size:13px;line-height:1.7"><strong>공연정보 출처</strong><br>KOPIS 공연예술통합전산망에서 제공하는 공연 등록 정보를 표시합니다.<br>공연 일정·장소·출연진·예매 가능 여부는 변경될 수 있으므로 최종 정보는 예매처에서 확인하세요.</div>
-<div class="detail-actions">${detail.bookingSites?.length ? '<button class="action-btn primary" type="button" onclick="openBookingList()">예매사이트</button>' : (item.prfurl ? '<a class="action-btn primary" href="'+escHtml(item.prfurl)+'" target="_blank" rel="noopener noreferrer">공식 공연정보</a>' : '')}<a class="action-btn" href="/">다른 공연 찾아보기</a></div>
+<div class="detail-actions">${detail.bookingSites?.length ? '<button class="action-btn primary" type="button" onclick="openBookingList()">예매사이트</button>' : (item.prfurl ? '<a class="action-btn primary" href="'+escHtml(item.prfurl)+'" target="_blank" rel="noopener noreferrer">공식 공연정보</a>' : '')}<a class="action-btn" href="/">다른 공연 찾아보기</a>
+<button class="action-btn" type="button" id="movokaDetailFavorite" aria-pressed="false">♡ 찜하기</button>
+<button class="action-btn" type="button" id="movokaDetailShare">공연 공유</button>
+<button class="action-btn" type="button" id="movokaDetailCalendar">관람일 캘린더 추가</button></div>
 </article>
 
 <div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()"><div class="booking-box"><h3>예매사이트 선택</h3><div class="booking-links">${(detail.bookingSites||[]).map(site=>'<a class="action-btn" href="'+escHtml(site.url)+'" target="_blank" rel="noopener noreferrer">'+escHtml(site.name)+'</a>').join('') || '<div>등록된 외부 예매사이트가 없습니다.</div>'}</div><button class="booking-close" onclick="closeBookingList()">닫기</button></div></div>
 <script>
 /* 버튼으로만 다크모드를 전환하고 선택값을 저장합니다. */
 (function(){const key='movoka-theme';const apply=mode=>{document.body.classList.toggle('dark',mode==='dark');const b=document.getElementById('themeToggle');if(b)b.textContent=mode==='dark'?'☀️ 라이트모드':'🌙 다크모드';};apply(localStorage.getItem(key)||'light');document.getElementById('themeToggle').onclick=()=>{const next=document.body.classList.contains('dark')?'light':'dark';localStorage.setItem(key,next);apply(next);};})();
+
+/* 미리보기: 공연 찜하기·공유·관람 날짜 저장. 서버 전송 없이 기기에 저장합니다. */
+(function(){
+  const id = (location.pathname.match(/\/performance\/(PF\d+)/) || [])[1];
+  const key = 'movoka-favorites-v1';
+  const item = document.getElementById('movokaPerformance');
+  const favoriteButton = document.getElementById('movokaDetailFavorite');
+  const shareButton = document.getElementById('movokaDetailShare');
+  const calendarButton = document.getElementById('movokaDetailCalendar');
+  function safeFavorites(){
+    try { const a = JSON.parse(localStorage.getItem(key) || '[]'); return new Set(Array.isArray(a) ? a.filter(x=>/^PF\d+$/.test(String(x))) : []); }
+    catch (_) { return new Set(); }
+  }
+  function renderFavorite(){
+    const pressed = safeFavorites().has(id);
+    favoriteButton.textContent = pressed ? '♥ 찜 완료' : '♡ 찜하기';
+    favoriteButton.setAttribute('aria-pressed', String(pressed));
+  }
+  favoriteButton.onclick = function(){
+    if (!id) return;
+    const values = safeFavorites();
+    if (values.has(id)) values.delete(id); else values.add(id);
+    try { localStorage.setItem(key, JSON.stringify(Array.from(values))); }
+    catch (_) { alert('이 브라우저에서는 찜 목록을 저장할 수 없습니다.'); }
+    renderFavorite();
+  };
+  shareButton.onclick = async function(){
+    const data = { title: document.querySelector('.h1')?.textContent || 'MOVOKA 공연', url: location.href };
+    try {
+      if (navigator.share) { await navigator.share(data); return; }
+      if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(data.url); alert('공연 주소를 복사했습니다.'); return; }
+      prompt('아래 주소를 복사하세요.', data.url);
+    } catch (error) { if (error?.name !== 'AbortError') prompt('공연 주소를 복사하세요.', data.url); }
+  };
+  function day(value){const d=String(value||'').replace(/\D/g,'');return /^\d{8}$/.test(d)?d:'';}
+  function nextDay(d){const dt=new Date(d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8)+'T00:00:00Z');dt.setUTCDate(dt.getUTCDate()+1);return dt.toISOString().slice(0,10).replace(/-/g,'');}
+  function escapeIcs(v){return String(v||'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/;/g,'\\;').replace(/,/g,'\\,');}
+  calendarButton.onclick = function(){
+    const start=day(item?.dataset.start),end=day(item?.dataset.end);
+    if(!start || !end){alert('공연 날짜 정보가 없습니다.');return;}
+    const today=new Date(Date.now()+9*3600000).toISOString().slice(0,10).replace(/-/g,'');
+    const suggested = today<start?start:today>end?start:today;
+    const answer=prompt('관람 예정일을 입력하세요 (YYYY-MM-DD). 실제 공연 시간·예매 여부는 예매처에서 확인해야 합니다.',suggested.slice(0,4)+'-'+suggested.slice(4,6)+'-'+suggested.slice(6,8));
+    if(answer===null)return;
+    const chosen=day(answer);
+    if(!chosen || chosen<start || chosen>end){alert('공연기간 안의 올바른 날짜를 입력하세요.');return;}
+    const now=new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'');
+    const title=document.querySelector('.h1')?.textContent||'MOVOKA 공연';
+    const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MOVOKA//Preview Calendar//KO','BEGIN:VEVENT',
+      'UID:'+id+'-'+chosen+'@movoka.tcflick.com','DTSTAMP:'+now,
+      'DTSTART;VALUE=DATE:'+chosen,'DTEND;VALUE=DATE:'+nextDay(chosen),
+      'SUMMARY:'+escapeIcs(title),'DESCRIPTION:'+escapeIcs('공연 날짜를 확인하세요. 상세정보: '+location.href),
+      'URL:'+location.href,'END:VEVENT','END:VCALENDAR',''];
+    const url=URL.createObjectURL(new Blob([lines.join('\r\n')],{type:'text/calendar;charset=utf-8'}));
+    const a=document.createElement('a');a.href=url;a.download='MOVOKA-'+id+'-'+chosen+'.ics';
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  renderFavorite();
+})();
 
 /* 상세 페이지의 모달 닫기만 처리합니다. 공연정보 링크는 저장된 prfurl을 사용합니다. */
 function openBookingList(){document.getElementById('bookingList').style.display='flex'}
@@ -250,7 +343,7 @@ export default {
 
     // robots.txt를 Worker에서 직접 반환해 네이버 검색로봇이 항상 200(text/plain)으로 읽도록 합니다.
     if (url.pathname === '/robots.txt') {
-      return new Response('User-agent: *\nAllow: /\n\nSitemap: https://movoka.tcflick.com/sitemap.xml\n', {
+      return new Response('User-agent: *\nDisallow: /\n', {
         status: 200,
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',

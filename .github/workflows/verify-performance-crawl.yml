@@ -1,6 +1,7 @@
 name: MOVOKA production performance crawl check
 on:
   push:
+    branches: [main]
     paths:
       - 'scripts/verify-performance-pages.mjs'
       - '.github/workflows/verify-performance-crawl.yml'

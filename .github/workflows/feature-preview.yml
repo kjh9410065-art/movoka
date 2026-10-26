@@ -1,0 +1,66 @@
+name: MOVOKA isolated feature preview
+on:
+  push:
+    branches: ['preview/discovery-features-20261026']
+    paths:
+      - 'public/**'
+      - 'worker.js'
+      - 'wrangler.jsonc'
+      - 'scripts/test-preview-*.mjs'
+      - '.github/workflows/feature-preview.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate preview JavaScript syntax
+        run: |
+          node --check public/preview-features.js
+          node --check worker.js
+      - name: Test preview behavior and staging isolation
+        run: |
+          node scripts/test-preview-features.mjs
+          node scripts/test-preview-worker.mjs
+      - name: Build standalone offline browser preview
+        run: node scripts/build-preview-demo.mjs
+      - name: Package preview files for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: movoka-feature-preview
+          path: |
+            public/
+            worker.js
+            wrangler.jsonc
+            package.json
+            README-PREVIEW.md
+          retention-days: 14
+      - name: Check optional Cloudflare preview credentials
+        id: cloudflare
+        env:
+          PREVIEW_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PREVIEW_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$PREVIEW_TOKEN" ] && [ -n "$PREVIEW_ACCOUNT" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Preview artifact is available. A live preview URL requires Cloudflare credentials."
+          fi
+      - name: Deploy only the isolated preview Worker
+        if: steps.cloudflare.outputs.enabled == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          grep -q '"name": "movoka-preview"' wrangler.jsonc
+          ! grep -q '"routes"' wrangler.jsonc
+          npm install --no-audit --no-fund
+          npx wrangler deploy --config wrangler.jsonc
+          echo "::notice::Deployed isolated preview Worker. Production domain movoka.tcflick.com unchanged."
