@@ -10,6 +10,7 @@ on:
     - cron: '0 22 * * *'
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - 'scripts/refresh-performances.mjs'
       - 'scripts/**'
