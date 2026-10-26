@@ -17,3 +17,6 @@ GitHub Secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`에 미리보기 W
 `wrangler.jsonc`에 운영 도메인 `routes`가 없으며 Worker 이름은 `movoka-preview`입니다. 이 브랜치는 초안 PR로 보관하고 운영 배포 전에는 병합하지 마세요.
 
 공연 목록은 복제된 KOPIS 저장 데이터이며, 별도 Worker에서 최신 예매정보를 조회하려면 그 Worker에도 KOPIS 키가 필요할 수 있습니다.
+
+## 오프라인 단일 HTML 미리보기
+GitHub Actions의 `movoka-feature-preview` 파일 묶음 안에 있는 `public/preview-demo.html`을 휴대전화나 PC 브라우저에서 열면 목록/찜하기/날짜·정렬을 샘플 데이터로 시험할 수 있습니다. 실제 공연 상세페이지 서버는 아니므로 상세보기는 안내창으로 대체됩니다.
