@@ -4,17 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <!-- Google Analytics 4: MOVOKA 측정 ID를 모든 페이지에서 수집합니다. -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-7ZB1PNQ9YZ"></script>
-<script>
-  // Google Analytics 데이터 수집을 위한 전역 데이터 레이어를 초기화합니다.
-  window.dataLayer = window.dataLayer || [];
-  // gtag 호출을 Google Analytics 데이터 레이어에 전달합니다.
-  function gtag(){dataLayer.push(arguments);}
-  // 현재 페이지의 초기화 시각을 기록합니다.
-  gtag('js', new Date());
-  // MOVOKA의 GA4 측정 ID로 페이지뷰를 전송합니다.
-  gtag('config', 'G-7ZB1PNQ9YZ');
-</script>
+<!-- Preview: production analytics disabled to avoid inflating traffic metrics. -->
 <meta name="description" content="현재 공연과 공연 예정작을 장르별로 찾고 공연기간·공연장·예매사이트를 확인하세요.">
 
 
@@ -22,7 +12,7 @@
 
 <meta name="google-site-verification" content="hAHkcvWFhoATFOdphua3yECySUCnJXT2IC9gfm0cYew" />
 <meta name="naver-site-verification" content="3b7dfe11888152c22b558b06f35998565807c086" />
-<meta name="robots" content="index,follow">
+<meta name="robots" content="noindex,nofollow">
 <link rel="canonical" href="https://movoka.tcflick.com/">
 <!-- 저장소에 넣어둔 MOVOKA 파비콘 이미지를 그대로 사용합니다. -->
 <link rel="icon" href="https://raw.githubusercontent.com/kjh9410065-art/movoka/main/%EB%AA%A8%EB%B3%B4%EC%B9%B4%20%ED%8C%8C%EB%B9%84%EC%BD%98.png" type="image/png">
@@ -49,8 +39,10 @@
 .value-guide{margin:0 0 28px;padding:28px;border:1px solid #e5e7ee;border-radius:20px;background:#fff}.value-guide-head{max-width:820px}.value-kicker{font-size:11px;color:#5b5bd6;font-weight:900;letter-spacing:.08em}.value-guide h2{margin:7px 0 9px;font-size:25px;letter-spacing:-1px}.value-guide-head>p{margin:0;color:#73798a;line-height:1.8;font-size:13px}.value-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:18px}.value-grid article{padding:18px;border:1px solid #e5e7ee;border-radius:15px;background:#fafbfe}.value-grid strong{display:block;font-size:14px;margin-bottom:6px}.value-grid p{margin:0;color:#73798a;font-size:12px;line-height:1.75}.data-note{display:flex;gap:12px;align-items:flex-start;margin-top:14px;padding:15px 17px;border-radius:14px;background:#f5f4fc}.data-note strong{white-space:nowrap;font-size:12px}.data-note span{color:#73798a;font-size:11px;line-height:1.7}@media(max-width:700px){.value-guide{padding:21px}.value-guide h2{font-size:21px}.value-grid{grid-template-columns:1fr}.data-note{display:block}.data-note span{display:block;margin-top:5px}}</style>
 
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6943939077344765" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="/preview-features.css">
 </head>
 <body>
+<div class="preview-ribbon" role="status">MOVOKA 기능 미리보기 · 운영 사이트에는 아직 적용되지 않았습니다</div>
 <div class="site-notice" id="siteNotice"><div class="site-notice-box"><h3>공연정보 안내</h3><p>이 사이트의 공연정보는 <strong>KOPIS 공연예술통합전산망</strong>에서 제공받습니다.<br><br>KOPIS에 등록된 줄거리 정보가 없는 공연은 MOVOKA에서도 줄거리를 표시하지 않습니다.</p><label class="site-notice-check"><input type="checkbox" id="siteNoticeToday"> 오늘은 더 표기하지 않기</label><button class="site-notice-close" type="button" id="siteNoticeClose">확인</button></div></div>
 <header><div class="wrap nav"><div class="logo">MOVOKA <span>· 모보카</span></div><div style="display:flex;align-items:center;gap:10px"><span class="kopis-label">KOPIS 공연정보</span><button id="themeToggle" type="button" class="theme-toggle">🌙 다크모드</button></div></div></header>
 <main class="wrap">
@@ -83,6 +75,8 @@
 </nav>
 <div style="padding-top:12px">© MOVOKA · 모보카</div>
 </footer>
+
+<script src="/preview-features.js"></script>
 
 <!-- 여러 예매처를 선택할 수 있는 팝업입니다. -->
 <div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()">
@@ -233,7 +227,7 @@ async function openBookingFor(id){
 }
 
 // 공연 카드에는 기존 버튼 UI를 유지하되 저장된 공식 공연정보 링크를 엽니다.
-function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><a class="detail-link" href="/performance/${esc(x.mt20id)}">상세보기</a><button class="booking" onmouseenter="prefetchBooking('${esc(x.mt20id)}')" onclick="openBookingFor('${esc(x.mt20id)}')">예매사이트</button></div></div></article>`}
+function card(x){return `<article class="card"><div class="poster">${x.poster?`<img src="${esc(x.poster)}" loading="lazy" onerror="this.parentElement.textContent='포스터 없음'">`:'포스터 없음'}</div><div class="body"><div class="tag">${esc(x.genrenm||'공연')}</div><div class="title">${esc(x.prfnm)}</div><div class="meta">📅 ${esc(x.prfpdfrom)} ~ ${esc(x.prfpdto)}<br>📍 ${esc(x.fcltynm)}</div><div class="actions"><a class="detail-link" href="/performance/${esc(x.mt20id)}">상세보기</a><button class="booking" onmouseenter="prefetchBooking('${esc(x.mt20id)}')" onclick="openBookingFor('${esc(x.mt20id)}')">예매사이트</button>${MovokaExtras.favoriteButton(x.mt20id)}</div></div></article>`}
 
 // 선택된 탭의 공연을 28개씩 화면에 표시합니다.
 function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPages=Math.max(1,Math.ceil(source.length/PAGE_SIZE));if(page>totalPages)page=totalPages;const start=(page-1)*PAGE_SIZE;const items=source.slice(start,start+PAGE_SIZE);$('grid').innerHTML=items.length?items.map(card).join(''):'<div class="empty">조건에 맞는 공연이 없습니다.</div>';$('count').textContent=tab==='upcoming'?'공연 예정 '+source.length+'개':'현재 공연 '+source.length+'개';renderPager()}
@@ -242,13 +236,27 @@ function render(){const source=tab==='upcoming'?allUpcoming:allCurrent;totalPage
 function renderPager(){if(totalPages<=1){$('pager').innerHTML='';return}$('pager').innerHTML=Array.from({length:totalPages},(_,i)=>`<button class="page ${i+1===page?'active':''}" data-page="${i+1}">${i+1}</button>`).join('');$('pager').onclick=e=>{const b=e.target.closest('.page');if(!b)return;page=Number(b.dataset.page);render();scrollTo({top:0,behavior:'smooth'})}}
 
 // 장르와 검색어를 이미 받아둔 전체 데이터에 적용합니다.
-function filterData(){const keyword=$('q').value.normalize('NFKC').trim().toLowerCase();const base=list=>list.filter(x=>(!active||x.genrenm===categories.find(c=>c[0]===active)?.[1])&&(!keyword||String(x.prfnm||'').normalize('NFKC').toLowerCase().includes(keyword)));allCurrent=base(window.__rawCurrent||[]);allUpcoming=base(window.__rawUpcoming||[]);page=1;$('currentCount').textContent=allCurrent.length;$('upcomingCount').textContent=allUpcoming.length;render()}
+function filterData(){
+  const keyword=$('q').value.normalize('NFKC').trim().toLowerCase();
+  const selectedCategory=categories.find(c=>c[0]===active)?.[1];
+  const base=list=>list.filter(x=>(!active||x.genrenm===selectedCategory)
+    &&(!keyword||[x.prfnm,x.fcltynm,x.area].some(v=>String(v||'').normalize('NFKC').toLowerCase().includes(keyword))));
+  allCurrent=MovokaExtras.apply(base(window.__rawCurrent||[]));
+  allUpcoming=MovokaExtras.apply(base(window.__rawUpcoming||[]));
+  page=1;
+  $('currentCount').textContent=allCurrent.length;
+  $('upcomingCount').textContent=allUpcoming.length;
+  render();
+}
 
 // 저장된 일일 데이터 파일을 한 번만 읽습니다. 캐시된 이전 JSON을 피합니다.
 async function load(){try{const response=await fetch('/data/performances.json?'+Date.now(),{cache:'no-store'});const data=await response.json();if(!response.ok||!data||!Array.isArray(data.items))throw new Error('저장된 공연 데이터가 없습니다.');window.__rawCurrent=data.current||[];window.__rawUpcoming=data.upcoming||[];$('updated').textContent=data.updatedAt?(()=>{const stamp=new Date(data.updatedAt);const hours=(Date.now()-stamp.getTime())/3600000;return Number.isFinite(hours)&&hours>48?`⚠ 데이터 갱신 지연 · 마지막 갱신 ${stamp.toLocaleString('ko-KR')}`:`마지막 갱신 ${stamp.toLocaleString('ko-KR')}`})():'⚠ 갱신 시각 확인 불가';filterData()}catch(e){$('grid').innerHTML=`<div class="empty">공연 정보를 불러오지 못했습니다.<br><small>${esc(e.message)}</small></div>`;$('count').textContent='불러오기 실패'}}
 
 // 사이트에 처음 접속하면 공연정보 출처와 줄거리 표시 기준을 안내합니다.
 (function(){const notice=$('siteNotice');const today=new Date().toISOString().slice(0,10);if(localStorage.getItem('movoka-site-notice-date')!==today)notice.style.display='flex';$('siteNoticeClose').onclick=()=>{if($('siteNoticeToday').checked)localStorage.setItem('movoka-site-notice-date',today);notice.style.display='none';};})();
+
+// Preview controls are installed before the JSON fetch completes.
+MovokaExtras.mount(filterData);
 
 // 페이지가 열리면 저장된 일일 데이터만 읽습니다.
 load();

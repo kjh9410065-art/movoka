@@ -1,6 +1,3 @@
-# MOVOKA robots.txt
-# Search engines may crawl the public service pages.
+# Preview-only site: keep crawlers off unreleased work.
 User-agent: *
-Allow: /
-
-Sitemap: https://movoka.tcflick.com/sitemap.xml
+Disallow: /

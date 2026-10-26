@@ -1,0 +1,21 @@
+/* Isolated feature-preview styling; intentionally not loaded on production. */
+.preview-ribbon{background:#ebe9ff;color:#363175;text-align:center;font-size:12px;font-weight:800;padding:9px 16px;border-bottom:1px solid #d3cfff}
+.preview-discovery{margin:8px 0 24px;border:1px solid #deddf5;border-radius:18px;background:#fbfaff;padding:18px}
+.preview-discovery-title{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-bottom:13px}
+.preview-discovery-title strong{font-size:16px}.preview-discovery-title small{color:#686579;font-size:11px}
+.preview-quick,.preview-fields{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.preview-quick button,.preview-fields button{background:#fff;color:#38344c;border:1px solid #d8d7e7;border-radius:11px;padding:10px 13px;min-height:40px;font-weight:750;cursor:pointer}
+.preview-quick button.is-active{background:#5149c9;color:#fff;border-color:#5149c9}
+.preview-fields{margin-top:12px}.preview-fields label{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;color:#59556b}
+.preview-fields input,.preview-fields select{min-height:42px;border:1px solid #d8d7e7;border-radius:10px;padding:9px;background:#fff;color:#252438;font:inherit}
+.preview-help{margin-top:10px;color:#6f6a80;font-size:11px;line-height:1.6}
+.actions .preview-favorite{flex:1.1;border:1px solid #dacde4;color:#744f76;background:#fff;font-size:12px;font-weight:800;cursor:pointer}
+.actions .preview-favorite.is-on{background:#fff0f6;color:#bf2f60;border-color:#ecbfd0}
+body.dark .preview-ribbon{background:#302b58;color:#e0dfff;border-color:#45406c}
+body.dark .preview-discovery{background:#211f30;border-color:#464157}
+body.dark .preview-discovery-title small,body.dark .preview-help,body.dark .preview-fields label{color:#c5bfd9}
+body.dark .preview-quick button,body.dark .preview-fields button,body.dark .preview-fields input,body.dark .preview-fields select{background:#2e2c3e;color:#f1f1f9;border-color:#504c63}
+body.dark .preview-quick button.is-active{background:#6762ce;color:#fff}
+body.dark .actions .preview-favorite{background:#303040;color:#ffc3d5;border-color:#655064}
+body.dark .actions .preview-favorite.is-on{background:#56334c;color:#ffb9cf}
+@media(max-width:700px){.preview-discovery{padding:14px}.preview-fields label{width:100%;justify-content:space-between}.preview-fields input,.preview-fields select{flex:1;max-width:72%}.actions{flex-wrap:wrap}.actions .preview-favorite{flex-basis:100%}}
