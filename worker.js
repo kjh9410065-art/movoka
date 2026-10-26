@@ -92,6 +92,36 @@ function renderPerformancePage(item, detail = {}) {
 <meta property="og:description" content="${description}">
 ${poster}<style>
 *{box-sizing:border-box}body{margin:0;background:#f5f6fa;color:#171923;font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif}.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px}.wrap{max-width:760px;margin:auto;padding:32px 18px 60px}.back{display:inline-block;color:#5b5bd6;text-decoration:none;font-weight:800}.card{background:#fff;border:1px solid #e5e7ee;border-radius:18px;padding:20px}.poster{max-width:280px;margin:auto}.poster img{display:block;width:100%;border-radius:12px}.tag{margin-top:20px;color:#5b5bd6;font-weight:800}.h1{font-size:32px;line-height:1.3;margin:8px 0 20px}.meta{line-height:1.9;color:#5f6575}.cast{margin-top:20px;padding-top:20px;border-top:1px solid #eee}.detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}.action-btn{display:inline-flex;align-items:center;justify-content:center;padding:11px 16px;border-radius:10px;border:1px solid #ddd;background:#fff;color:inherit;text-decoration:none;font-weight:800;cursor:pointer}.action-btn.primary{background:#5b5bd6;color:#fff;border-color:#5b5bd6}.theme-btn{border:1px solid #ddd;background:#fff;color:inherit;border-radius:10px;padding:9px 12px;font-weight:800;cursor:pointer}.booking-list{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}.booking-box{width:min(420px,100%);background:#fff;color:#171923;border-radius:16px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.2)}.booking-box h3{margin:0 0 14px}.booking-links{display:grid;gap:9px}.booking-links button{width:100%;padding:12px;border:1px solid #ddd;background:#fff;color:inherit;border-radius:10px;text-align:left;font-weight:700;cursor:pointer}.booking-close{margin-top:12px;width:100%;padding:10px;border:0;border-radius:10px;background:#f1f2f6;color:inherit;cursor:pointer}.dark{background:#15171c;color:#f1f3f6}.dark .card,.dark .booking-box{background:#20232a;color:#f1f3f6;border-color:#343944}.dark .meta{color:#b8becb}.dark .cast{border-color:#343944}.dark .action-btn,.dark .theme-btn,.dark .booking-links button{background:#252932;color:#f1f3f6;border-color:#3a3f4b}.synopsis-box{margin-top:16px;padding:16px;border:1px solid #e5e7ee;border-radius:12px;line-height:1.8}.dark .synopsis-box{border-color:#343944}.dark .booking-close{background:#30343d}.dark .source-box{background:#252932 !important;color:#b8becb !important}.dark .source-box strong{color:#f1f3f6}.dark .synopsis-box{background:#20232a;color:#f1f3f6}.dark .synopsis-box div{color:#b8becb}.dark footer{color:#b8becb !important}.dark footer a{color:#8b8ff0 !important}.dark .back{color:#8b8ff0}.dark .tag{color:#8b8ff0}
+
+/* Adaptive detail layout for the preview Worker only. */
+html,body{max-width:100%;overflow-x:clip}
+.wrap,.card,.detail-actions{min-width:0}
+.h1{font-size:clamp(25px,4vw,34px);overflow-wrap:anywhere}
+.meta,.source-box,.synopsis-box{overflow-wrap:anywhere}
+.action-btn,.theme-btn{min-height:44px;white-space:normal;word-break:keep-all}
+.detail-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.detail-actions .action-btn{min-width:0;text-align:center}
+.poster img{max-width:100%;height:auto;object-fit:contain}
+@media(min-width:600px) and (max-width:899px){
+  .wrap{max-width:760px;padding:26px 20px 50px}
+  .detail-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:599px){
+  .wrap{padding:22px 14px 38px}
+  .topbar{align-items:flex-start;gap:12px}
+  .card{padding:16px;border-radius:14px}
+  .h1{font-size:clamp(23px,6vw,30px)}
+  .detail-actions{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .detail-actions .action-btn{padding:10px 8px;font-size:12px;line-height:1.45}
+  .poster{max-width:min(240px,100%)}
+  .booking-box{max-height:calc(100dvh - 24px);overflow:auto}
+}
+@media(max-width:319px){
+  .wrap{padding:18px 10px 30px}
+  .detail-actions{grid-template-columns:1fr}
+  .topbar .back{max-width:62%;font-size:12px}
+  .theme-btn{font-size:12px}
+}
 </style>
 </head>
 <body><main class="wrap">

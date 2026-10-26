@@ -43,4 +43,16 @@ assert.match(worker, /id="movokaDetailFavorite"/, "detail favorite");
 assert.match(worker, /id="movokaDetailShare"/, "detail sharing");
 assert.match(worker, /id="movokaDetailCalendar"/, "detail calendar");
 assert.match(worker, /noindex,nofollow/, "detail noindex");
+const responsiveCSS=await readFile("public/preview-features.css","utf8");
+for (const token of ["@media(max-width:319px)","@media(max-width:419px)","@media(min-width:420px) and (max-width:599px)","@media(min-width:600px) and (max-width:899px)","@media(min-width:900px) and (max-width:1199px)","@media(min-width:1500px)"]) {
+  assert(responsiveCSS.includes(token), "responsive breakpoint missing: "+token);
+}
+assert.match(responsiveCSS, /\.chips\{display:flex;flex-wrap:wrap/, "genre categories must wrap and stay visible");
+assert.match(responsiveCSS, /\.wrap,\.site-footer\{width:min\(/, "fluid responsive page gutters");
+assert.match(responsiveCSS, /\.preview-fields input,\.preview-fields select\{display:block;width:100%/, "date and sort input must not overflow");
+assert.match(responsiveCSS, /\.grid\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/, "unfolded Fold must display two cards");
+assert.match(responsiveCSS, /\.grid\{grid-template-columns:1fr/, "folded Fold and bar phone must display one card");
+assert.match(html, /name="viewport" content="width=device-width,initial-scale=1"/, "viewport must scale on Fold resize");
+assert.match(html, /document\.querySelector\('\.preview-ribbon'\)/, "preview must not block initial browsing with announcement modal");
+
 console.log("MOVOKA preview tests passed: worker isolation, favorites, dates, filters, share/calendar and noindex.");
