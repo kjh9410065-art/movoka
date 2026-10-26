@@ -1,0 +1,18 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+const source=await readFile("worker.js","utf8");
+const handler=(await import("data:text/javascript;base64,"+Buffer.from(source).toString("base64"))).default;
+const id="PF301988";
+const item={mt20id:id,prfnm:"한글 공연 이름",prfpdfrom:"2026.10.26",prfpdto:"2026.11.20",genrenm:"연극",fcltynm:"공연장"};
+const env={ASSETS:{fetch:async()=>Response.json({current:[item],upcoming:[]})}};
+const response=await handler.fetch(new Request("https://preview.example.com/performance/"+id),env);
+assert.equal(response.status,200);
+const html=await response.text();
+assert.match(html,/name="robots" content="noindex,nofollow"/);
+assert.match(html,/id="movokaDetailFavorite"/);
+assert.match(html,/id="movokaDetailShare"/);
+assert.match(html,/id="movokaDetailCalendar"/);
+assert.match(html,/한글 공연 이름/);
+const unknown=await handler.fetch(new Request("https://preview.example.com/performance/PF999999999"),env);
+assert.equal(unknown.status,404);
+console.log("MOVOKA preview Worker checks passed: detail page controls, noindex, fallback.");
