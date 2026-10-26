@@ -31,6 +31,7 @@ assert.equal(features.asDay("2026-10-26"),"20261026", "ISO dates recognized");
 assert.equal(features.asDay("nonsense"),"","invalid dates excluded");
 assert.equal(features.weekend().length,2,"weekend range");
 assert.match(html, /noindex,nofollow/, "preview not indexed");
+assert.doesNotMatch(html, /pagead2\.googlesyndication\.com|googletagmanager\.com\/gtag\/js/, "preview must not load production ads or analytics");
 assert.match(html, /MovokaExtras.mount\(filterData\)/, "UI mounted");
 assert.match(html, /MovokaExtras.apply\(base/, "filter wired");
 assert.match(html, /MovokaExtras.favoriteButton\(x.mt20id\)/, "card favorite wired");
