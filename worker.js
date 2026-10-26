@@ -313,7 +313,7 @@ export default {
 
     // robots.txt를 Worker에서 직접 반환해 네이버 검색로봇이 항상 200(text/plain)으로 읽도록 합니다.
     if (url.pathname === '/robots.txt') {
-      return new Response('User-agent: *\nAllow: /\n\nSitemap: https://movoka.tcflick.com/sitemap.xml\n', {
+      return new Response('User-agent: *\nDisallow: /\n', {
         status: 200,
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
