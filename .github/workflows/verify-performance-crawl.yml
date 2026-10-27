@@ -19,6 +19,33 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test Worker detail page handler (parallel crawler requests)
         run: node scripts/test-worker-performance.mjs
+      - name: Regression test crawlable directory, canonical pages, and details
+        run: node scripts/test-performance-directory.mjs
+      - name: Confirm directory is live and accessible to Googlebot
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 24); do
+            RESPONSE=$(curl -sS --max-time 18 -A 'Googlebot/2.1 (+http://www.google.com/bot.html)' \
+              -o /tmp/movoka-directory.html -w '%{http_code}' \
+              "https://movoka.tcflick.com/performances?seo-probe=$(date +%s%N)" || true)
+            if [ "$RESPONSE" = "200" ] &&
+               grep -Fq 'href="/performance/PF' /tmp/movoka-directory.html &&
+               grep -Fq 'href="/performances?page=2"' /tmp/movoka-directory.html; then
+              LINKS=$(grep -o 'href="/performance/PF[0-9]*"' /tmp/movoka-directory.html | wc -l)
+              test "$LINKS" -eq 80
+              STATUS=$(curl -sS --max-time 18 -o /tmp/movoka-directory-2.html -w '%{http_code}' \
+                'https://movoka.tcflick.com/performances?page=2')
+              test "$STATUS" = "200"
+              grep -Fq 'rel="prev" href="/performances"' /tmp/movoka-directory-2.html
+              echo "MOVOKA production: Googlebot can reach 80 real performance links, and next page works."
+              exit 0
+            fi
+            echo "Waiting for crawlable directory rollout: attempt $attempt/24 (HTTP $RESPONSE)"
+            sleep 10
+          done
+          echo '::error::Crawlable performance directory not yet visible in production'
+          exit 1
       - name: Verify the resilient Worker handler is deployed to production
         shell: bash
         run: |
