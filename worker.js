@@ -95,7 +95,7 @@ ${poster}<style>
 </style>
 </head>
 <body><main class="wrap">
-<div class="topbar"><a class="back" href="/">← MOVOKA 공연 목록</a><button class="theme-btn" id="themeToggle" type="button">🌙 다크모드</button></div>
+<div class="topbar"><a class="back" href="/performances">← 전체 공연 목록</a><button class="theme-btn" id="themeToggle" type="button">🌙 다크모드</button></div>
 <article class="card">
 ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${title} 포스터"></div>` : ''}
 <div class="tag">${escHtml(status)} · ${escHtml(item.genrenm || '공연')}</div>
@@ -106,7 +106,7 @@ ${item.poster ? `<div class="poster"><img src="${escHtml(item.poster)}" alt="${t
 <strong>지역</strong><br>${escHtml(item.area || '정보 없음')}<br>\n<strong>장르</strong><br>${escHtml(item.genrenm || '정보 없음')}
 </div>
 ${item.prfcast ? `<div class="cast"><strong>출연진</strong><br>${escHtml(item.prfcast)}</div>` : ''}\n${detail.sty ? `<div class="synopsis-box"><strong>줄거리</strong><div style="margin-top:8px">${escHtml(detail.sty).replace(/\n/g, '<br>')}</div></div>` : ''}\n<div class="source-box" style="margin-top:20px;padding:14px;border-radius:12px;background:#f7f7fa;color:#666;font-size:13px;line-height:1.7"><strong>공연정보 출처</strong><br>KOPIS 공연예술통합전산망에서 제공하는 공연 등록 정보를 표시합니다.<br>공연 일정·장소·출연진·예매 가능 여부는 변경될 수 있으므로 최종 정보는 예매처에서 확인하세요.</div>
-<div class="detail-actions">${detail.bookingSites?.length ? '<button class="action-btn primary" type="button" onclick="openBookingList()">예매사이트</button>' : (item.prfurl ? '<a class="action-btn primary" href="'+escHtml(item.prfurl)+'" target="_blank" rel="noopener noreferrer">공식 공연정보</a>' : '')}<a class="action-btn" href="/">다른 공연 찾아보기</a></div>
+<div class="detail-actions">${detail.bookingSites?.length ? '<button class="action-btn primary" type="button" onclick="openBookingList()">예매사이트</button>' : (item.prfurl ? '<a class="action-btn primary" href="'+escHtml(item.prfurl)+'" target="_blank" rel="noopener noreferrer">공식 공연정보</a>' : '')}<a class="action-btn" href="/performances">다른 공연 찾아보기</a></div>
 </article>
 
 <div class="booking-list" id="bookingList" onclick="if(event.target===this)closeBookingList()"><div class="booking-box"><h3>예매사이트 선택</h3><div class="booking-links">${(detail.bookingSites||[]).map(site=>'<a class="action-btn" href="'+escHtml(site.url)+'" target="_blank" rel="noopener noreferrer">'+escHtml(site.name)+'</a>').join('') || '<div>등록된 외부 예매사이트가 없습니다.</div>'}</div><button class="booking-close" onclick="closeBookingList()">닫기</button></div></div>
@@ -180,6 +180,49 @@ async function fetchPerformanceDetail(key, id) {
   } catch {
     return { sty: '', styurls: '', bookingSites: [] };
   }
+}
+
+
+// Crawler-accessible directory: every performance appears in a real HTML <a href>.
+const DIRECTORY_SIZE = 80;
+function performanceDirectoryUrl(page) { return page === 1 ? '/performances' : '/performances?page=' + page; }
+function renderPerformanceDirectory(byId, page) {
+  const all = Array.from(byId.values())
+    .filter(x => /^PF\d+$/.test(String(x.mt20id || '')))
+    .sort((a,b) => (a.prfstate === '02' ? 0 : 1) - (b.prfstate === '02' ? 0 : 1)
+      || String(a.prfpdfrom||'').localeCompare(String(b.prfpdfrom||''))
+      || String(a.prfnm||'').localeCompare(String(b.prfnm||''),'ko'));
+  const pages = Math.ceil(all.length/DIRECTORY_SIZE);
+  if (!pages || !Number.isSafeInteger(page) || page < 1 || page > pages) return null;
+  const first=(page-1)*DIRECTORY_SIZE;
+  const shown=all.slice(first,first+DIRECTORY_SIZE);
+  const canonical='https://movoka.tcflick.com'+performanceDirectoryUrl(page);
+  const pager=[];
+  if(page>1)pager.push('<a rel="prev" href="'+performanceDirectoryUrl(page-1)+'">← 이전</a>');
+  for(let p=1;p<=pages;p++)pager.push('<a href="'+performanceDirectoryUrl(p)+'"'+(p===page?' aria-current="page"':'')+'>'+p+'</a>');
+  if(page<pages)pager.push('<a rel="next" href="'+performanceDirectoryUrl(page+1)+'">다음 →</a>');
+  const cards=shown.map(item=>'<li><a href="/performance/'+encodeURIComponent(item.mt20id)+'"><strong>'+
+    escHtml(item.prfnm||'공연명 미등록')+'</strong></a><span>'+escHtml(item.genrenm||'공연')+' · '+
+    escHtml(item.prfpdfrom||'')+' ~ '+escHtml(item.prfpdto||'')+' · '+
+    escHtml(item.fcltynm||'공연장 정보 없음')+(item.area?' · '+escHtml(item.area):'')+'</span></li>').join('\n');
+  const css='*{box-sizing:border-box}body{margin:0;background:#f5f6fa;color:#171923;font-family:system-ui,-apple-system,"Noto Sans KR",sans-serif;line-height:1.6}' +
+    'main{max-width:1060px;padding:28px 18px 50px;margin:auto}a{color:#4343aa}header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}' +
+    '.brand{font-weight:900;font-size:23px;text-decoration:none;color:#171923}.intro{color:#616979}.items{list-style:none;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}' +
+    '.items li{background:white;border:1px solid #e5e7ee;border-radius:13px;padding:16px;min-width:0}.items strong{overflow-wrap:anywhere}' +
+    '.items span{display:block;color:#657084;font-size:13px;margin-top:8px;overflow-wrap:anywhere}.pagination{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin:28px 0}' +
+    '.pagination a{display:inline-flex;align-items:center;justify-content:center;min-width:39px;min-height:42px;padding:7px 10px;background:white;border:1px solid #dde0e9;border-radius:9px;text-decoration:none}' +
+    '.pagination a[aria-current=page]{background:#514dcb;color:white;border-color:#514dcb}footer{border-top:1px solid #dde0e9;margin-top:30px;padding-top:20px;font-size:13px;color:#657084}' +
+    '@media(max-width:680px){main{padding:18px 13px 32px}.items{grid-template-columns:1fr}.items li{padding:13px}.brand{font-size:20px}h1{font-size:25px}.pagination{gap:4px}.pagination a{min-width:34px;min-height:40px;padding:6px 7px}}';
+  const description='모보카 공연 목록 '+(first+1)+'~'+(first+shown.length)+'번. 현재 공연과 공연 예정작을 날짜·장르·공연장별로 확인하세요.';
+  const links='<nav class="pagination" aria-label="공연 목록 페이지">'+pager.join('')+'</nav>';
+  return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+    '<meta name="robots" content="index,follow"><title>전체 공연 목록 '+page+'/'+pages+' | MOVOKA</title>'+
+    '<meta name="description" content="'+escHtml(description)+'"><link rel="canonical" href="'+escHtml(canonical)+'"><style>'+css+'</style></head>'+
+    '<body><main><header><a class="brand" href="/">MOVOKA · 모보카</a><a href="/">홈으로</a></header><h1>전체 공연 목록</h1>'+
+    '<p class="intro">현재 공연·공연 예정 총 '+all.length+'건 · '+(first+1)+'~'+(first+shown.length)+'번 · '+page+'/'+pages+' 페이지</p>'+
+    '<p class="intro">공연 제목을 누르면 공연기간과 공연장, 예매 경로를 확인할 수 있습니다. 정보 출처: KOPIS 공연예술통합전산망.</p>'+
+    links+'<ul class="items">'+cards+'</ul>'+links+
+    '<footer>데이터 출처: KOPIS · <a href="/">모보카 홈</a> · <a href="/contact.html">문의하기</a></footer></main></body></html>';
 }
 
 // Cache the public performance catalog inside each Worker isolate for a short period.
@@ -270,6 +313,26 @@ export default {
       return Response.redirect('https://raw.githubusercontent.com/kjh9410065-art/movoka/main/%EB%AA%A8%EB%B3%B4%EC%B9%B4%20%ED%8C%8C%EB%B9%84%EC%BD%98.png', 302);
     }
 
+
+    // Crawlable directory accessible without JavaScript.
+    if (url.pathname === '/performances/' || (url.pathname === '/performances' && url.searchParams.get('page') === '1')) {
+      return Response.redirect('https://movoka.tcflick.com/performances', 301);
+    }
+    if (url.pathname === '/performances') {
+      const raw = url.searchParams.get('page') || '1';
+      if (!/^[1-9]\d{0,3}$/.test(raw)) return new Response('공연 목록 페이지를 찾을 수 없습니다.', {status:404});
+      const catalog = await loadPerformanceCatalog(env, url);
+      const html = renderPerformanceDirectory(catalog, Number(raw));
+      if (!html) return new Response('공연 목록을 찾을 수 없습니다.', {
+        status: catalog.size ? 404 : 503,
+        headers: catalog.size ? {} : {'Retry-After':'120'}
+      });
+      return new Response(html, {status:200, headers:{
+        'Content-Type':'text/html; charset=utf-8',
+        'Cache-Control':'public, max-age=120, s-maxage=300',
+        'X-Movoka-Directory':'crawlable-20261027'
+      }});
+    }
 
     // 공연 상세 URL은 저장된 performances.json만 사용해 HTML을 제공합니다.
     const performanceMatch = url.pathname.match(/^\/performance\/(PF\d+)\/?$/);

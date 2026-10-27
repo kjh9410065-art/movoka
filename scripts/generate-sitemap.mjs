@@ -30,9 +30,11 @@ const validItems = allItems.filter(item => {
 const ids = [...new Set(validItems.map(item => item.mt20id))];
 if (ids.length === 0) throw new Error('사이트맵에 등록할 유효 공연이 0건입니다. 기존 사이트맵을 보존합니다.');
 
-const staticUrls = ['/', '/terms.html', '/privacy.html', '/contact.html'];
+const staticUrls = ['/', '/terms.html', '/privacy.html', '/contact.html', '/performances'];
+const directoryUrls = Array.from({length: Math.ceil(ids.length / 80) - 1}, (_, n) => BASE + '/performances?page=' + (n + 2));
 const urls = [
   ...staticUrls.map(path => BASE + path),
+  ...directoryUrls,
   ...ids.map(id => BASE + '/performance/' + encodeURIComponent(id))
 ];
 if (new Set(urls).size !== urls.length) throw new Error('사이트맵 URL 중복이 발견되었습니다.');
