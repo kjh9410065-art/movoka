@@ -119,9 +119,9 @@ function openBookingList(){document.getElementById('bookingList').style.display=
 function closeBookingList(){document.getElementById('bookingList').style.display='none';}
 </script>
 <footer style="margin-top:24px;color:#73798a;font-size:13px"><p style="margin:0 0 10px">데이터 출처: KOPIS 공연예술통합전산망</p>
-<a href="/terms.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">이용약관</a> ·
-<a href="/privacy.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">개인정보처리방침</a> ·
-<a href="/contact.html" style="color:#5b5bd6;text-decoration:none;font-weight:700">문의하기</a>
+<a href="/terms" style="color:#5b5bd6;text-decoration:none;font-weight:700">이용약관</a> ·
+<a href="/privacy" style="color:#5b5bd6;text-decoration:none;font-weight:700">개인정보처리방침</a> ·
+<a href="/contact" style="color:#5b5bd6;text-decoration:none;font-weight:700">문의하기</a>
 </footer>
 </main></body></html>`;
 }
@@ -222,7 +222,7 @@ function renderPerformanceDirectory(byId, page) {
     '<p class="intro">현재 공연·공연 예정 총 '+all.length+'건 · '+(first+1)+'~'+(first+shown.length)+'번 · '+page+'/'+pages+' 페이지</p>'+
     '<p class="intro">공연 제목을 누르면 공연기간과 공연장, 예매 경로를 확인할 수 있습니다. 정보 출처: KOPIS 공연예술통합전산망.</p>'+
     links+'<ul class="items">'+cards+'</ul>'+links+
-    '<footer>데이터 출처: KOPIS · <a href="/">모보카 홈</a> · <a href="/contact.html">문의하기</a></footer></main></body></html>';
+    '<footer>데이터 출처: KOPIS · <a href="/">모보카 홈</a> · <a href="/contact">문의하기</a></footer></main></body></html>';
 }
 
 // Cache the public performance catalog inside each Worker isolate for a short period.
