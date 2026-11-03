@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 실패한 수집도 전체 재시도하고 push 충돌은 최신 원격 코드로 복구합니다.
+# 2026-11-04 정기 공연 데이터 갱신 실행 요청 (수집 동작 변경 없음).
 set -Eeuo pipefail
 export MOVOKA_REFRESH_STARTED_AT="$(node -p 'new Date().toISOString()')"
 export MOVOKA_REFRESH_DATE="$(node --input-type=module -e 'import { refreshDate } from "./scripts/refresh-utils.mjs"; console.log(refreshDate())')"
